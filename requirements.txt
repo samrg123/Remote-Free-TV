@@ -1,1 +1,2 @@
 mediapipe==0.9.2.1
+pyrealsense2==2.53.1.4623 

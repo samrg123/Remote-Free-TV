@@ -4,6 +4,8 @@ import time
 import cv2 as cv
 import numpy as np
 
+import pyrealsense2 as rs
+
 import mediapipe as mp
 from mediapipe.tasks.python import vision
 from mediapipe.tasks import python
@@ -28,6 +30,32 @@ def warn(msg):
 
 def error(msg):
     log(msg, prefix="ERROR", logLevel=LogLevel.Error)
+
+def list_ports():
+    """
+    Test the ports and returns a tuple with the available ports and the ones that are working.
+    """
+    non_working_ports = []
+    dev_port = 0
+    working_ports = []
+    available_ports = []
+    while len(non_working_ports) < 6: # if there are more than 5 non working ports stop the testing. 
+        camera = cv.VideoCapture(dev_port)
+        if not camera.isOpened():
+            non_working_ports.append(dev_port)
+            print("Port %s is not working." %dev_port)
+        else:
+            is_reading, img = camera.read()
+            w = camera.get(3)
+            h = camera.get(4)
+            if is_reading:
+                print("Port %s is working and reads images (%s x %s)" %(dev_port,h,w))
+                working_ports.append(dev_port)
+            else:
+                print("Port %s for camera ( %s x %s) is present but does not reads." %(dev_port,h,w))
+                available_ports.append(dev_port)
+        dev_port +=1
+    return available_ports,working_ports,non_working_ports
 
 
 # NOTE: Colors are in BGR to align with opencv
@@ -89,16 +117,43 @@ class Classifier:
 
     def __init__(self, cameraPort:int = 0, windowName:str = None) -> None:
 
-        self.camera_port = cameraPort
-        self.camera = cv.VideoCapture(cameraPort)
+        # Configure depth and color streams
+        self.pipeline = rs.pipeline()
+        self.config = rs.config()
 
-        self.cameraHeight = 720
-        self.cameraWidth  = 1280
-        self.camera.set(cv.CAP_PROP_FRAME_HEIGHT, self.cameraHeight)
-        self.camera.set(cv.CAP_PROP_FRAME_WIDTH, self.cameraWidth)
+        # Get device product line for setting a supporting resolution
+        self.pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
+        self.pipeline_profile = self.config.resolve(self.pipeline_wrapper)
+        self.device = self.pipeline_profile.get_device()
+        self.device_product_line = str(self.device.get_info(rs.camera_info.product_line))
+        log(f"Device in use: {self.device}")
 
-        self.cameraFPS = 30
-        self.camera.set(cv.CAP_PROP_FPS, self.cameraFPS)
+        self.found_rgb = False
+        for s in self.device.sensors:
+            if s.get_info(rs.camera_info.name) == 'RGB Camera':
+                self.found_rgb = True
+                break
+
+        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+
+        if self.device_product_line == 'L500':
+            self.config.enable_stream(rs.stream.color, 960, 540, rs.format.bgr8, 30)
+        else:
+            self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+
+        # Start streaming
+        self.pipeline.start(self.config)
+
+        # self.camera_port = cameraPort
+        # self.camera = cv.VideoCapture(cameraPort)
+
+        # self.cameraHeight = 720
+        # self.cameraWidth  = 1280
+        # self.camera.set(cv.CAP_PROP_FRAME_HEIGHT, self.cameraHeight)
+        # self.camera.set(cv.CAP_PROP_FRAME_WIDTH, self.cameraWidth)
+
+        # self.cameraFPS = 30
+        # self.camera.set(cv.CAP_PROP_FPS, self.cameraFPS)
 
         self.windowName = windowName if windowName is not None else f"Classifier: {cameraPort}"
         cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
@@ -154,22 +209,26 @@ class Classifier:
         # clear out last frame
         self.renderImages.clear()
 
-        validFrame, framePixels = self.camera.read()
-
-        if not validFrame:
+        frames = self.pipeline.wait_for_frames()
+        depth_frame = frames.get_depth_frame()
+        color_frame = frames.get_color_frame()
+        
+        if not depth_frame or not color_frame:
             warn(f"Failed to capture frame: {self.frameId}")
             return
+
 
         frameTime = time.time()
         frameRate = 1. / (frameTime - self.frameTime)
 
 
         # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
-        processedPixels = framePixels.copy()
+        color_image = np.asanyarray(color_frame.get_data())
+        processedPixels = color_image.copy()
 
         self.detectHands(processedPixels)
 
-        self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", framePixels))
+        self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", color_image))
         self.renderImages.append(NamedImage(f"Processed", processedPixels))
         
         self.frameId+= 1 
@@ -240,8 +299,13 @@ def main():
     )
 
     argParser.add_argument("-p", "--port", metavar="n", action="store", default=0, required=False, help="Camera port number")
+    argParser.add_argument("-l", "--list", action="store_true", default=False, required=False, help="List available port numbers")
 
     args = argParser.parse_args()
+
+    if bool(args.list):
+        list_ports()
+        return
 
     classifier = Classifier(cameraPort=int(args.port), windowName="Classifier")
 
