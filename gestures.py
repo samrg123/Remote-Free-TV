@@ -3,6 +3,8 @@ import math
 import time
 import cv2 as cv
 import numpy as np
+import pprint
+from enum import Enum
 
 import pyrealsense2 as rs
 
@@ -13,6 +15,11 @@ from mediapipe.tasks import python
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
+
+class Gesture(Enum):
+    LeftToRight = 2
+    RightToLeft = 1
+    Nothing = 0
 
 class LogLevel:
     Debug = 2
@@ -144,17 +151,6 @@ class Classifier:
         # Start streaming
         self.pipeline.start(self.config)
 
-        # self.camera_port = cameraPort
-        # self.camera = cv.VideoCapture(cameraPort)
-
-        # self.cameraHeight = 720
-        # self.cameraWidth  = 1280
-        # self.camera.set(cv.CAP_PROP_FRAME_HEIGHT, self.cameraHeight)
-        # self.camera.set(cv.CAP_PROP_FRAME_WIDTH, self.cameraWidth)
-
-        # self.cameraFPS = 30
-        # self.camera.set(cv.CAP_PROP_FPS, self.cameraFPS)
-
         self.windowName = windowName if windowName is not None else f"Classifier: {cameraPort}"
         cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
 
@@ -162,6 +158,11 @@ class Classifier:
         self.frameTime = time.time()
 
         self.renderImages:list[NamedImage] = []
+
+        self.pp = pprint.PrettyPrinter(indent=4)
+
+        self.history = np.empty((15), dtype=object)
+
 
     def __bool__(self):
         return cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
@@ -190,10 +191,10 @@ class Classifier:
             # Draw the hand annotations on the image.
             if not results.multi_hand_landmarks or not results.multi_handedness:
                 return
+            
+            hand_annotations = list(zip(results.multi_hand_landmarks, results.multi_handedness))
 
-            for (landmarks, handedness) in zip(results.multi_hand_landmarks, results.multi_handedness):
-
-                print(f'Handedness: {handedness}')
+            for (landmarks, handedness) in hand_annotations:
 
                 mp_drawing.draw_landmarks(
                     framePixels,
@@ -203,6 +204,15 @@ class Classifier:
                     mp_drawing_styles.get_default_hand_connections_style()
                 )
 
+            return hand_annotations
+
+    def detectGesture(self, handHistory):
+        if handHistory[0] is not None and handHistory[-1] is not None:
+            if handHistory[0] - handHistory[-1] > 0.2:
+                return Gesture.RightToLeft
+            elif handHistory[-1] - handHistory[0] > 0.2:
+                return Gesture.LeftToRight
+        return Gesture.Nothing
 
     def update(self):
         
@@ -217,19 +227,27 @@ class Classifier:
             warn(f"Failed to capture frame: {self.frameId}")
             return
 
-
         frameTime = time.time()
         frameRate = 1. / (frameTime - self.frameTime)
-
 
         # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
         color_image = np.asanyarray(color_frame.get_data())
         processedPixels = color_image.copy()
 
-        self.detectHands(processedPixels)
+        self.history = np.roll(self.history, 1)
+        hand_annotations = self.detectHands(processedPixels)  
+        if hand_annotations:   
+            # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
+            for landmarks, handedness in hand_annotations:
+                self.history[0] = landmarks.landmark[0].x
+                break
+        else:
+            self.history[0] = None
+
+        gesture = self.detectGesture(self.history)
 
         self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", color_image))
-        self.renderImages.append(NamedImage(f"Processed", processedPixels))
+        self.renderImages.append(NamedImage(f"Processed ({gesture})", processedPixels))
         
         self.frameId+= 1 
         self.frameTime = frameTime
