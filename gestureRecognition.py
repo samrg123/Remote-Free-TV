@@ -84,10 +84,10 @@ class GestureRecognizer:
             result_callback = None
         )
 
-        self.gestureRecognizer = mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions)
+        self.mpGestureRecognizer = mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions)
 
 
-        self.windowName = windowName if windowName is not None else f"Classifier: {type(depthCamera).__name__}"
+        self.windowName = windowName if windowName is not None else f"GestureRecognizer: {type(depthCamera).__name__}"
         cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
 
         self.frameId = 0
@@ -102,8 +102,8 @@ class GestureRecognizer:
 
     def __del__(self):
 
-        if self.gestureRecognizer:
-            self.gestureRecognizer.close()
+        if self.mpGestureRecognizer:
+            self.mpGestureRecognizer.close()
 
     def __bool__(self):
         return cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
@@ -114,13 +114,12 @@ class GestureRecognizer:
         # Note: we use non-writeable flag to pass by reference
         framePixels.flags.writeable = False
 
-        # mpImage = cv.cvtColor(framePixels, cv.COLOR_BGR2RGB)
+        # TODO: Do we need to convert cv2 BGR frame into RGB? does realsense give use an RGB frame... test this out
+        #       and check whether or not switching green and blue pixels improves hand gesture recognition 
+        # cv.cvtColor(framePixels, cv.COLOR_BGR2RGB)
+
         mpImage = mp.Image(image_format=mp.ImageFormat.SRGB, data=framePixels)
-
-        # with mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions) as r:
-            # results = r.recognize_for_video(mpImage, int(timestampMS))
-
-        results = self.gestureRecognizer.recognize_for_video(mpImage, int(timestampMS))
+        results = self.mpGestureRecognizer.recognize_for_video(mpImage, int(timestampMS))
 
         framePixels.flags.writeable = True
 
@@ -285,11 +284,11 @@ def main():
     else:
         camera = DepthWebcam(port = int(args.webcam))
 
-    classifier = GestureRecognizer(depthCamera=camera, rokuUrl=args.url, windowName="GestureRecognizer")
+    gestureRecognizer = GestureRecognizer(depthCamera=camera, rokuUrl=args.url)
 
-    while classifier:
-        classifier.update()
-        classifier.draw()
+    while gestureRecognizer:
+        gestureRecognizer.update()
+        gestureRecognizer.draw()
 
 
 if __name__ == "__main__":
