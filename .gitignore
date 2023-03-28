@@ -1,3 +1,6 @@
+# Filter out files in Milestones unless explicitly added (AKA only upload the final video deliverable to github)
+Milestones/*
+
 # Created by https://www.toptal.com/developers/gitignore/api/python
 # Edit at https://www.toptal.com/developers/gitignore?templates=python
 

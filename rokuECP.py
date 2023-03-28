@@ -2,6 +2,8 @@ import argparse
 import requests
 from gestures import Gesture
 
+from util import *
+
 commandList = [
     "keyup",
     "keydown",
@@ -26,17 +28,18 @@ keyList = [
     "Enter"
 ]
 
+# TODO: Clean this up!
 keyDict = {
     Gesture.RightToLeft: "Left",
     Gesture.LeftToRight: "Right",
 }
 
-
-defaultUrl = "http://192.168.4.24:8060"
-defaultCmd = "keypress"
-
 class RokuECP():
-    def __init__(self, url, defaultCmd):
+
+    defaultUrl:str = "http://192.168.4.24:8060"
+    defaultCmd:str = "keypress"
+
+    def __init__(self, url = defaultUrl, defaultCmd = defaultCmd):
         self.url = url
         self.defaultCmd = defaultCmd
 
@@ -45,36 +48,36 @@ class RokuECP():
             self.sendCommand(keyDict[gesture], command)
 
     def sendCommand(self, key, command = None):
-        command = command if command is not None else self.defaultCmd
+
+        command = command if command is not None else self.defaultCmd 
         if command not in commandList:
-            self.panic(f"Command: '{command}' is not in commandList: {commandList}")
-        
+            error(f"Command: '{command}' is not in commandList: {commandList}")
+            return
+
         if key not in keyList:
-            self.panic(f"Key: '{key}' is not in keyList: {keyList}")
+            error(f"Key: '{key}' is not in keyList: {keyList}")
+            return
 
         ecpUrl = f"{self.url}/{command}/{key}"
 
         try:
+            log(f"Sending ecpUrl: {ecpUrl}")
             requests.post(ecpUrl)
 
         except Exception as e:
-            self.panic(f"Failed to send ecpUrl: {ecpUrl} | Exception: {e}")
-
-    def panic(self, msg, errorCode = 1):
-
-        print(f"ERROR - {msg}")
-        exit(errorCode)
+            error(f"Failed to send ecpUrl: {ecpUrl} | Exception: {e}")
 
 def main():
 
     argParser = argparse.ArgumentParser()
-    argParser.add_argument("--url",     required=False, action="store", metavar="URL", default=defaultUrl, help=f"Sets the url for connecting to the Roku. Default: '{defaultUrl}'")
-    argParser.add_argument("--command", required=False, action="store", metavar="CMD", default=defaultCmd, help=f"Sets the command to send to the Roku. Default: '{defaultCmd}' | Values: {commandList}")
-    argParser.add_argument("key",         action="store", metavar="KEY", help=f"The key code to send to the Roku. Values: {keyList}")
+    argParser.add_argument("--url",     required=False, action="store", metavar="URL", default=RokuECP.defaultUrl, help=f"Sets the url for connecting to the Roku. Default: '{RokuECP.defaultUrl}'")
+    argParser.add_argument("--command", required=False, action="store", metavar="CMD", default=RokuECP.defaultCmd, help=f"Sets the command to send to the Roku. Default: '{RokuECP.defaultCmd}' | Values: {commandList}")
+    argParser.add_argument("key",       action="store", metavar="KEY", help=f"The key code to send to the Roku. Values: {keyList}")
 
     args = argParser.parse_args()
-    RokuECPInstance = RokuECP(args.url, args.command)
-    RokuECPInstance.sendGesture(Gesture.LeftToRight)
+    RokuECPInstance = RokuECP(args.url)
+
+    RokuECPInstance.sendCommand(args.key, command=args.command)
 
 if __name__ == "__main__":
     main()

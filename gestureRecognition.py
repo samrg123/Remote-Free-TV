@@ -1,155 +1,93 @@
 import argparse
+
 import math
 import time
 import cv2 as cv
 import numpy as np
-import pprint
 
-import pyrealsense2 as rs
+from util import *
+from cvUtil import *
+
+from realsense import RealSenseCamera
+from webcam import DepthWebcam
 
 import mediapipe as mp
+from mediapipe.framework.formats import landmark_pb2
+from mediapipe.tasks.python.components.processors import ClassifierOptions as MPClassifierOptions
 
 from gestures import Gesture
 from rokuECP import RokuECP
 
+# TODO: Clean this up ... right now these are hacks to get around nasty wrapper types. Consider MediaPipe util?
 
 mp_drawing = mp.solutions.drawing_utils
 mp_drawing_styles = mp.solutions.drawing_styles
 mp_hands = mp.solutions.hands
 
-DEBOUNCE_LENGTH = 15
-
-class LogLevel:
-    Debug = 2
-    Warn  = 1
-    Error = 0
-
-verboseLevel:int = LogLevel.Debug
-
-def log(msg, prefix:str = "MSG", logLevel:int = LogLevel.Debug):
-    if(verboseLevel >= logLevel):
-        print(f"{prefix} - {msg}")
-
-def warn(msg):
-    log(msg, prefix="WARN", logLevel=LogLevel.Warn)
-
-def error(msg):
-    log(msg, prefix="ERROR", logLevel=LogLevel.Error)
-
-def list_ports():
-    """
-    Test the ports and returns a tuple with the available ports and the ones that are working.
-    """
-    non_working_ports = []
-    dev_port = 0
-    working_ports = []
-    available_ports = []
-    while len(non_working_ports) < 6: # if there are more than 5 non working ports stop the testing. 
-        camera = cv.VideoCapture(dev_port)
-        if not camera.isOpened():
-            non_working_ports.append(dev_port)
-            print("Port %s is not working." %dev_port)
-        else:
-            is_reading, img = camera.read()
-            w = camera.get(3)
-            h = camera.get(4)
-            if is_reading:
-                print("Port %s is working and reads images (%s x %s)" %(dev_port,h,w))
-                working_ports.append(dev_port)
-            else:
-                print("Port %s for camera ( %s x %s) is present but does not reads." %(dev_port,h,w))
-                available_ports.append(dev_port)
-        dev_port +=1
-    return available_ports,working_ports,non_working_ports
-
-
-# NOTE: Colors are in BGR to align with opencv
-class Color:
+def MakeMPClassifierOptions(
+    display_names_locale = "en",
+    max_results = -1,
+    score_threshold = 0,
+    category_allowlist = [],
+    category_denylist = [],
+) -> MPClassifierOptions:
     
-    white = (255, 255, 255)
-    black = (  0,   0,   0)
-    red   = (  0,   0, 255)
-    green = (  0, 255,   0)
-    blue  = (255,   0,   0)
+    options = MPClassifierOptions()
+    
+    options.display_names_locale = display_names_locale
+    options.max_results = max_results
+    options.score_threshold = score_threshold
+    options.category_allowlist = category_allowlist
+    options.category_denylist = category_denylist
 
-class NamedImage:
+    return options
 
-    def __init__(self, name:str, pixels:cv.Mat, nameOrigin:tuple[int, int] = None) -> None:
-        self.name = name
-        self.pixels = pixels
-
-        self.font = cv.FONT_HERSHEY_DUPLEX
-        self.fontColor = Color.white
-        self.fontSize = .75
-        self.fontThickness = 1
-
-        self.fontShadowColor = Color.black
-        self.fontShadowSize = 2
-
-        self.defaultFontPadding = [10, 10]
-
-        self.setNameOrigin(nameOrigin)
-
-    def getTextSize(self, text:str):
-        textWidth, textHeight  = cv.getTextSize(text, self.font, self.fontSize, self.getShadowThickness())[0]
-        return (textWidth, textHeight)
-
-    def setNameOrigin(self, nameOrigin:tuple[int, int]):
-
-        if nameOrigin is None:
-
-            _, nameHeight  = self.getTextSize(self.name)
-            self.nameOrigin = (self.defaultFontPadding[0], nameHeight + self.defaultFontPadding[1])
+def MakeNormalizedLandmarkList(landmarks) -> landmark_pb2.NormalizedLandmarkList:
+    landmarkProto = landmark_pb2.NormalizedLandmarkList()
         
-        else:
-            self.nameOrigin = nameOrigin 
+    landmarkProto.landmark.extend([
+        landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z) for landmark in landmarks
+    ])
 
-    def getShadowThickness(self):
-        return self.fontThickness + self.fontShadowSize
+    return landmarkProto
 
-    def drawText(self, text:str, origin:tuple[int, int]):
+class GestureRecognizer:
 
-        # Note: opencv requires integer position for text
-        intOrigin = (int(origin[0]), int(origin[1]))
+    DEBOUNCE_LENGTH:int = 15
 
-        shadowImage = cv.putText(self.pixels, text, intOrigin, self.font, self.fontSize, self.fontShadowColor, self.getShadowThickness(), cv.LINE_AA)
-        return cv.putText(shadowImage, text, intOrigin, self.font, self.fontSize, self.fontColor, self.fontThickness, cv.LINE_AA)
+    def __init__(self, depthCamera, rokuUrl = RokuECP.defaultUrl, windowName:str = None) -> None:
 
-    def getImage(self):
-        return self.drawText(self.name, self.nameOrigin)
+        self.depthCamera = depthCamera
+        self.rokuEcp = RokuECP(rokuUrl)
 
-class Classifier:
+        self.GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions(
 
-    def __init__(self, cameraPort:int = 0, windowName:str = None) -> None:
+            base_options = mp.tasks.BaseOptions(model_asset_path='model/gesture_recognizer.task'),
+            
+            running_mode = mp.tasks.vision.RunningMode.VIDEO,
+            num_hands    = 2,
+            min_hand_detection_confidence = .5,
+            min_hand_presence_confidence = .5,
+            min_tracking_confidence = .5,
 
-        # Configure depth and color streams
-        self.pipeline = rs.pipeline()
-        self.config = rs.config()
+            # TODO: Figure out how to get canned gestures working
+            # canned_gesture_classifier_options = MakeMPClassifierOptions(
+            #     score_threshold = 0, # return all scores
+            #     # category_allowlist = ["None", "Closed_Fist", "Open_Palm", "Pointing_Up", "Thumb_Down", "Thumb_Up", "Victory", "ILoveYou"],
+            #     category_allowlist = ["None", "Closed_Fist", "Pointing_Up", "Thumb_Down", "Thumb_Up", "Victory"],
+            #     category_denylist = []
+            # ),
 
-        # Get device product line for setting a supporting resolution
-        self.pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
-        self.pipeline_profile = self.config.resolve(self.pipeline_wrapper)
-        self.device = self.pipeline_profile.get_device()
-        self.device_product_line = str(self.device.get_info(rs.camera_info.product_line))
-        log(f"Device in use: {self.device}")
+            # custom_gesture_classifier_options = MakeMPClassifierOptions(),
 
-        self.found_rgb = False
-        for s in self.device.sensors:
-            if s.get_info(rs.camera_info.name) == 'RGB Camera':
-                self.found_rgb = True
-                break
+            # Note: Needed for LIVE_STREAM running_mode
+            result_callback = None
+        )
 
-        self.config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+        self.gestureRecognizer = mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions)
 
-        if self.device_product_line == 'L500':
-            self.config.enable_stream(rs.stream.color, 960, 540, rs.format.bgr8, 30)
-        else:
-            self.config.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
 
-        # Start streaming
-        self.pipeline.start(self.config)
-
-        self.windowName = windowName if windowName is not None else f"Classifier: {cameraPort}"
+        self.windowName = windowName if windowName is not None else f"Classifier: {type(depthCamera).__name__}"
         cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
 
         self.frameId = 0
@@ -157,103 +95,105 @@ class Classifier:
 
         self.renderImages:list[NamedImage] = []
 
-        self.pp = pprint.PrettyPrinter(indent=4)
-
-        self.history = np.empty((DEBOUNCE_LENGTH), dtype=object)
+        self.history = np.empty((self.DEBOUNCE_LENGTH), dtype=object)
         self.lastGesture = Gesture.Nothing
         self.lastGestureId = 0
 
-        self.roku_interface = RokuECP("http://192.168.4.24:8060", "keypress")
 
+    def __del__(self):
+
+        if self.gestureRecognizer:
+            self.gestureRecognizer.close()
 
     def __bool__(self):
         return cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
 
-    def detectHands(self, framePixels):
+    def detectHands(self, framePixels, timestampMS):
 
-        with mp_hands.Hands(
-            static_image_mode=False, # False = images are part of video stream
-            max_num_hands=2,            
-            model_complexity=0,      # 1 for more complex gestures (heavy processing)
-            min_detection_confidence=0.4,
-            min_tracking_confidence=0.4,
+        # Note: Media pipe uses RGB for CNN models
+        # Note: we use non-writeable flag to pass by reference
+        framePixels.flags.writeable = False
 
-        ) as hands:
+        # mpImage = cv.cvtColor(framePixels, cv.COLOR_BGR2RGB)
+        mpImage = mp.Image(image_format=mp.ImageFormat.SRGB, data=framePixels)
 
+        # with mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions) as r:
+            # results = r.recognize_for_video(mpImage, int(timestampMS))
 
-            # Note: Media pipe uses RGB for CNN models
-            # Note: we use non-writeable flag to pass by reference
-            framePixels.flags.writeable = False
+        results = self.gestureRecognizer.recognize_for_video(mpImage, int(timestampMS))
 
-            mpImage = cv.cvtColor(framePixels, cv.COLOR_BGR2RGB)
-            results = hands.process(mpImage)
+        framePixels.flags.writeable = True
 
-            framePixels.flags.writeable = True
+        if not results:
+            return 
 
-            # Draw the hand annotations on the image.
-            if not results.multi_hand_landmarks or not results.multi_handedness:
-                return
-            
-            hand_annotations = list(zip(results.multi_hand_landmarks, results.multi_handedness))
+        hand_annotations = list(zip(results.hand_landmarks, results.handedness, results.gestures))
 
-            for (landmarks, handedness) in hand_annotations:
+        for (landmarks, handedness, gesture) in hand_annotations:
 
-                mp_drawing.draw_landmarks(
-                    framePixels,
-                    landmarks,
-                    mp_hands.HAND_CONNECTIONS,
-                    mp_drawing_styles.get_default_hand_landmarks_style(),
-                    mp_drawing_styles.get_default_hand_connections_style()
-                )
+            # TODO: Draw the box and label around the image showing what choice the classifier should use!
 
-            return hand_annotations
+            print(f'Handedness: {handedness}')
+            print(f'Gesture: {gesture}')
+
+            mp_drawing.draw_landmarks(
+                framePixels,
+                MakeNormalizedLandmarkList(landmarks),
+                mp_hands.HAND_CONNECTIONS,
+                mp_drawing_styles.get_default_hand_landmarks_style(),
+                mp_drawing_styles.get_default_hand_connections_style()
+            )
+
+        return hand_annotations
+
 
     def detectGesture(self, handHistory):
+
         if handHistory[0] is not None and handHistory[-1] is not None:
+
             if handHistory[0] - handHistory[-1] > 0.2:
                 return Gesture.RightToLeft
+
             elif handHistory[-1] - handHistory[0] > 0.2:
                 return Gesture.LeftToRight
+
         return Gesture.Nothing
 
     def update(self):
         
+        colorFrame, depthFrame = self.depthCamera.getFrames()
+        
+        if colorFrame is None:
+            return
+
         # clear out last frame
         self.renderImages.clear()
-
-        frames = self.pipeline.wait_for_frames()
-        depth_frame = frames.get_depth_frame()
-        color_frame = frames.get_color_frame()
-        
-        if not depth_frame or not color_frame:
-            warn(f"Failed to capture frame: {self.frameId}")
-            return
 
         frameTime = time.time()
         frameRate = 1. / (frameTime - self.frameTime)
 
         # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
-        color_image = np.asanyarray(color_frame.get_data())
-        processedPixels = color_image.copy()
+        processedPixels = colorFrame.copy()
 
         self.history = np.roll(self.history, 1)
-        hand_annotations = self.detectHands(processedPixels)  
+        hand_annotations = self.detectHands(processedPixels, 1000*frameTime)  
+        
         if hand_annotations:   
             # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
-            for landmarks, handedness in hand_annotations:
-                self.history[0] = landmarks.landmark[0].x
+            for (landmarks, handedness, gesture) in hand_annotations:
+                self.history[0] = landmarks[0].x
                 break
         else:
             self.history[0] = None
 
+        # TODO: make use of new hand_annotations 'gesture' value for static gesture detection
         gesture = self.detectGesture(self.history)
         if gesture != self.lastGesture:
             self.lastGesture = gesture
             self.lastGestureId = self.frameId
-            self.roku_interface.sendGesture(gesture)
+            self.rokuEcp.sendGesture(gesture)
             
-
-        self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", color_image))
+        self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", colorFrame))
         self.renderImages.append(NamedImage(f"Processed ({gesture})", processedPixels))
         
         self.frameId+= 1 
@@ -319,20 +259,33 @@ class Classifier:
 def main():
 
     argParser = argparse.ArgumentParser(
-        prog = "gestures",
+        prog = "gestureRecognition",
         description ="Gesture classifier for Remote Free TV",
     )
 
-    argParser.add_argument("-p", "--port", metavar="n", action="store", default=0, required=False, help="Camera port number")
     argParser.add_argument("-l", "--list", action="store_true", default=False, required=False, help="List available port numbers")
+    argParser.add_argument("-r", "--realsense", action="store_true", required=False, help="Uses Intel RealSense depth camera. If this flag isn't specified webcam is used instead.")
+    argParser.add_argument("-w", "--webcam", metavar="int:port", action="store", default=None, required=False, help="Uses webcam at `port`")
+    argParser.add_argument("--url",     required=False, action="store", metavar="URL", default=RokuECP.defaultUrl, help=f"Sets the url for connecting to the Roku. Default: '{RokuECP.defaultUrl}'")
 
     args = argParser.parse_args()
 
     if bool(args.list):
-        list_ports()
+        listVideoPorts()
         return
 
-    classifier = Classifier(cameraPort=int(args.port), windowName="Classifier")
+    if not args.realsense and args.webcam is None:
+        panic(f"Must specify either '--webcam' or '--realsense'")
+
+    if args.realsense and args.webcam is not None:
+        panic(f"Cannot specify both '--webcam' and '--realsense'")
+
+    if args.realsense:
+        camera = RealSenseCamera()
+    else:
+        camera = DepthWebcam(port = int(args.webcam))
+
+    classifier = GestureRecognizer(depthCamera=camera, rokuUrl=args.url, windowName="GestureRecognizer")
 
     while classifier:
         classifier.update()
