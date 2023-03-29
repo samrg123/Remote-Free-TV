@@ -45,10 +45,10 @@ class RealSenseCamera:
         colorPixels = self.frame2Pixles(frames.get_color_frame())
         depthPixels = self.frame2Pixles(frames.get_depth_frame()) 
         
-        if not colorPixels:
+        if colorPixels is None:
             warn(f"Failed to capture realsense color frame")
 
-        if not depthPixels:
+        if depthPixels is None:
             warn(f"Failed to capture realsense depth frame")
 
         return colorPixels, depthPixels   
