@@ -90,15 +90,19 @@ class GesturesClass:
             return history[0].y - history[-1].y > 0.2
         return False
 
-    left  = MotionGesture("stop",           "Left",   motionLeft)
-    right = MotionGesture("stop",           "Right",  motionRight)
-    up    = MotionGesture("stop",           "Up",     motionUp)
-    down  = MotionGesture("stop",           "Down",   motionDown)
-    back  = MotionGesture("peace_inverted", "Back",   motionLeft) #TODO: Make sure this works - ideally we would want sideways thumb
+    fastForward = MotionGesture("four",           "Left",   motionLeft)
+    rewind      = MotionGesture("four",           "Right",  motionRight)
+    left        = MotionGesture("stop",           "Left",   motionLeft)
+    right       = MotionGesture("stop",           "Right",  motionRight)
+    up          = MotionGesture("stop",           "Up",     motionUp)
+    down        = MotionGesture("stop",           "Down",   motionDown)
+    # volumeUp      = MotionGesture("one",           "VolumeUp",        motionDown)
+    # volumeDown    = MotionGesture("one",           "VolumeDown",      motionUp)
+    back        = MotionGesture("peace_inverted", "Back",   motionLeft) #TODO: Make sure this works - ideally we would want sideways thumb
 
-    home   = StaticGesture("call", "Home")
-    select = StaticGesture("fist", "Select")
-    play   = StaticGesture("peace", "Play")
+    home        = StaticGesture("call", "Home")
+    select      = StaticGesture("like", "Select")
+    play        = StaticGesture("peace", "Play")
 
     def gestureList(self):
         
