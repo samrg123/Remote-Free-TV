@@ -11,12 +11,13 @@ from cvUtil import *
 from realsense import RealSenseCamera
 from webcam import DepthWebcam
 
+
 import mediapipe as mp
 from mediapipe.framework.formats import landmark_pb2
 from mediapipe.tasks.python.components.processors import ClassifierOptions as MPClassifierOptions
 
-from gestures import Gesture
 from rokuECP import RokuECP
+from gestures import *
 
 # TODO: Clean this up ... right now these are hacks to get around nasty wrapper types. Consider MediaPipe util?
 
@@ -62,7 +63,7 @@ class GestureRecognizer:
 
         self.GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions(
 
-            base_options = mp.tasks.BaseOptions(model_asset_path='model/gesture_recognizer.task'),
+            base_options = mp.tasks.BaseOptions(model_asset_path='models/hagrid_120k/model/gesture_recognizer.task'),
             
             running_mode = mp.tasks.vision.RunningMode.VIDEO,
             num_hands    = 2,
@@ -95,8 +96,7 @@ class GestureRecognizer:
 
         self.renderImages:list[NamedImage] = []
 
-        self.history = np.empty((self.DEBOUNCE_LENGTH), dtype=object)
-        self.lastGesture = Gesture.Nothing
+        self.lastGesture = None
         self.lastGestureId = 0
 
 
@@ -128,13 +128,22 @@ class GestureRecognizer:
 
         hand_annotations = list(zip(results.hand_landmarks, results.handedness, results.gestures))
 
-        for (landmarks, handedness, gesture) in hand_annotations:
+        height, width, depth = framePixels.shape
+        for (landmarks, handedness, gestures) in hand_annotations:
 
-            # TODO: Draw the box and label around the image showing what choice the classifier should use!
+            # print(f'Handedness: {handedness}')
+            # print(f'Gesture: {gesture}')
 
-            print(f'Handedness: {handedness}')
-            print(f'Gesture: {gesture}')
+            # Draw box and gesture around image
+            landmarkCoords = np.array([ [int(landmark.x*width), int(landmark.y*height)] for landmark in landmarks ], dtype=int)
 
+            x,y,w,h = cv.boundingRect(landmarkCoords)
+            cv.rectangle(framePixels, (x,y), (x+w,y+h), color=Color.green)
+
+            gestureNames = ", ".join([gesture.category_name for gesture in gestures])
+            cv.putText(framePixels, gestureNames, org=(x,y), fontScale=1, color=Color.green, fontFace=cv.FONT_HERSHEY_COMPLEX)
+
+            # Draw hand skeleton
             mp_drawing.draw_landmarks(
                 framePixels,
                 MakeNormalizedLandmarkList(landmarks),
@@ -146,17 +155,15 @@ class GestureRecognizer:
         return hand_annotations
 
 
-    def detectGesture(self, handHistory):
+    def detectGestures(self, handAnnotations) -> StaticGesture | MotionGesture | None:
 
-        if handHistory[0] is not None and handHistory[-1] is not None:
+        gestures = []
 
-            if handHistory[0] - handHistory[-1] > 0.2:
-                return Gesture.RightToLeft
+        for gesture in Gestures:
+            if gesture.isDetected(handAnnotations):
+                gestures.append(gesture) 
 
-            elif handHistory[-1] - handHistory[0] > 0.2:
-                return Gesture.LeftToRight
-
-        return Gesture.Nothing
+        return gestures
 
     def update(self):
         
@@ -173,27 +180,22 @@ class GestureRecognizer:
 
         # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
         processedPixels = colorFrame.copy()
-
-        self.history = np.roll(self.history, 1)
-        hand_annotations = self.detectHands(processedPixels, 1000*frameTime)  
+        handAnnotations = self.detectHands(processedPixels, 1000*frameTime)  
         
-        if hand_annotations:   
-            # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
-            for (landmarks, handedness, gesture) in hand_annotations:
-                self.history[0] = landmarks[0].x
-                break
-        else:
-            self.history[0] = None
+        detectedGestures = self.detectGestures(handAnnotations)
+    
+        for gesture in detectedGestures:
 
-        # TODO: make use of new hand_annotations 'gesture' value for static gesture detection
-        gesture = self.detectGesture(self.history)
-        if gesture != self.lastGesture:
-            self.lastGesture = gesture
-            self.lastGestureId = self.frameId
-            self.rokuEcp.sendGesture(gesture)
+            print(gesture)
+
+            if gesture != self.lastGesture:
+                self.lastGesture = gesture
+                self.lastGestureId = self.frameId
+                
+                self.rokuEcp.sendCommand(gesture.rokuKey, gesture.rokuCommand)
             
         self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", colorFrame))
-        self.renderImages.append(NamedImage(f"Processed ({gesture})", processedPixels))
+        self.renderImages.append(NamedImage(f"Processed", processedPixels))
         
         self.frameId+= 1 
         self.frameTime = frameTime

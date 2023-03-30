@@ -1,0 +1,93 @@
+2023-03-30 01:35:51.150779: I tensorflow/core/platform/cpu_feature_guard.cc:193] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+------- STARTING ---------
+Searching: 'models/hagrid_120k/dataset'
+Labels: '['call', 'dislike', 'fist', 'four', 'like', 'mute', 'none', 'ok', 'one', 'palm', 'peace', 'peace_inverted', 'rock', 'stop', 'stop_inverted', 'three', 'three2', 'two_up', 'two_up_inverted']'
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+
+
+2023-03-30 07:44:47.066702: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:47.280749: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:47.280840: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:47.290158: I tensorflow/core/platform/cpu_feature_guard.cc:193] This TensorFlow binary is optimized with oneAPI Deep Neural Network Library (oneDNN) to use the following CPU instructions in performance-critical operations:  AVX2 FMA
+To enable them in other operations, rebuild TensorFlow with the appropriate compiler flags.
+2023-03-30 07:44:47.294389: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:47.294482: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:47.294540: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:48.976576: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:48.977476: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:48.977591: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1700] Could not identify NUMA node of platform GPU id 0, defaulting to 0.  Your kernel may not have been built with NUMA support.
+2023-03-30 07:44:48.977719: I tensorflow/compiler/xla/stream_executor/cuda/cuda_gpu_executor.cc:967] could not open file to read NUMA node: /sys/bus/pci/devices/0000:01:00.0/numa_node
+Your kernel may have been built without NUMA support.
+2023-03-30 07:44:48.979126: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1613] Created device /job:localhost/replica:0/task:0/device:GPU:0 with 2737 MB memory:  -> device: 0, name: NVIDIA GeForce GTX 1050 Ti with Max-Q Design, pci bus id: 0000:01:00.0, compute capability: 6.1
+WARNING:tensorflow:From /home/sam/.local/lib/python3.10/site-packages/tensorflow/python/autograph/pyct/static_analysis/liveness.py:83: Analyzer.lamba_check (from tensorflow.python.autograph.pyct.static_analysis.liveness) is deprecated and will be removed after 2023-09-23.
+Instructions for updating:
+Lambda fuctions will be no more assumed to be used in the statement where they are used, or at least in the same block. https://github.com/tensorflow/tensorflow/issues/56089
+Created Dataset - Train: 88272 | Validate: 11034 | Test: 11034
+Model: "model"
+_________________________________________________________________
+ Layer (type)                Output Shape              Param #   
+=================================================================
+ hand_embedding (InputLayer)  [(None, 128)]            0         
+                                                                 
+ batch_normalization (BatchN  (None, 128)              512       
+ ormalization)                                                   
+                                                                 
+ re_lu (ReLU)                (None, 128)               0         
+                                                                 
+ dropout (Dropout)           (None, 128)               0         
+                                                                 
+ custom_gesture_recognizer_o  (None, 19)               2451      
+ ut (Dense)                                                      
+                                                                 
+=================================================================
+Total params: 2,963
+Trainable params: 2,707
+Non-trainable params: 256
+_________________________________________________________________
+None
+Epoch 1/10
+2023-03-30 07:45:11.796538: I tensorflow/compiler/xla/service/service.cc:173] XLA service 0x7fc488017860 initialized for platform CUDA (this does not guarantee that XLA will be used). Devices:
+2023-03-30 07:45:11.796591: I tensorflow/compiler/xla/service/service.cc:181]   StreamExecutor device (0): NVIDIA GeForce GTX 1050 Ti with Max-Q Design, Compute Capability 6.1
+2023-03-30 07:45:11.857023: I tensorflow/compiler/mlir/tensorflow/utils/dump_mlir_util.cc:268] disabling MLIR crash reproducer, set env var `MLIR_CRASH_REPRODUCER_DIRECTORY` to enable.
+2023-03-30 07:45:12.597743: I tensorflow/compiler/jit/xla_compilation_cache.cc:477] Compiled cluster using XLA!  This line is logged at most once for the lifetime of the process.
+44136/44136 [==============================] - 2086s 47ms/step - loss: 0.9312 - categorical_accuracy: 0.6727 - val_loss: 0.5064 - val_categorical_accuracy: 0.8469 - lr: 0.0010
+Epoch 2/10
+44136/44136 [==============================] - 2070s 47ms/step - loss: 0.8590 - categorical_accuracy: 0.7016 - val_loss: 0.5250 - val_categorical_accuracy: 0.8469 - lr: 9.9000e-04
+Epoch 3/10
+44136/44136 [==============================] - 2113s 48ms/step - loss: 0.8492 - categorical_accuracy: 0.7050 - val_loss: 0.5352 - val_categorical_accuracy: 0.8469 - lr: 9.8010e-04
+Epoch 4/10
+44136/44136 [==============================] - 2142s 49ms/step - loss: 0.8456 - categorical_accuracy: 0.7060 - val_loss: 0.5433 - val_categorical_accuracy: 0.8438 - lr: 9.7030e-04
+Epoch 5/10
+44136/44136 [==============================] - 2246s 51ms/step - loss: 0.8423 - categorical_accuracy: 0.7068 - val_loss: 0.5675 - val_categorical_accuracy: 0.8433 - lr: 9.6060e-04
+Epoch 6/10
+44136/44136 [==============================] - 2573s 58ms/step - loss: 0.8388 - categorical_accuracy: 0.7089 - val_loss: 0.5794 - val_categorical_accuracy: 0.8433 - lr: 9.5099e-04
+Epoch 7/10
+44136/44136 [==============================] - 2189s 50ms/step - loss: 0.8363 - categorical_accuracy: 0.7100 - val_loss: 0.5931 - val_categorical_accuracy: 0.8384 - lr: 9.4148e-04
+Epoch 8/10
+44136/44136 [==============================] - 2301s 52ms/step - loss: 0.8341 - categorical_accuracy: 0.7107 - val_loss: 0.5976 - val_categorical_accuracy: 0.8365 - lr: 9.3207e-04
+Epoch 9/10
+44136/44136 [==============================] - 2342s 53ms/step - loss: 0.8333 - categorical_accuracy: 0.7105 - val_loss: 0.6023 - val_categorical_accuracy: 0.8413 - lr: 9.2274e-04
+Epoch 10/10
+44136/44136 [==============================] - 2653s 60ms/step - loss: 0.8327 - categorical_accuracy: 0.7123 - val_loss: 0.6185 - val_categorical_accuracy: 0.8430 - lr: 9.1352e-04
+345/345 [==============================] - 1090s 358ms/step - loss: 0.6177 - categorical_accuracy: 0.8412
+Test loss:0.6176844835281372, Test accuracy:0.8412180542945862
+Exporting Model to: 'models/hagrid_120k/model'
+2023-03-30 14:21:59.696869: W tensorflow/compiler/mlir/lite/python/tf_tfl_flatbuffer_helpers.cc:362] Ignored output_format.
+2023-03-30 14:21:59.697238: W tensorflow/compiler/mlir/lite/python/tf_tfl_flatbuffer_helpers.cc:365] Ignored drop_control_dependency.
+2023-03-30 14:21:59.706940: I tensorflow/cc/saved_model/reader.cc:45] Reading SavedModel from: /tmp/tmptzgnsb3j/saved_model
+2023-03-30 14:21:59.708854: I tensorflow/cc/saved_model/reader.cc:89] Reading meta graph with tags { serve }
+2023-03-30 14:21:59.708934: I tensorflow/cc/saved_model/reader.cc:130] Reading SavedModel debug info (if present) from: /tmp/tmptzgnsb3j/saved_model
+2023-03-30 14:21:59.751147: I tensorflow/compiler/mlir/mlir_graph_optimization_pass.cc:357] MLIR V1 optimization pass is not enabled
+2023-03-30 14:21:59.753028: I tensorflow/cc/saved_model/loader.cc:229] Restoring SavedModel bundle.
+2023-03-30 14:21:59.799107: I tensorflow/cc/saved_model/loader.cc:213] Running initialization op on SavedModel bundle at path: /tmp/tmptzgnsb3j/saved_model
+2023-03-30 14:21:59.815576: I tensorflow/cc/saved_model/loader.cc:305] SavedModel load for tags { serve }; Status: success: OK. Took 108571 microseconds.
+------- DONE! ---------

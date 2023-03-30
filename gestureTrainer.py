@@ -6,8 +6,8 @@ assert tf.__version__.startswith('2')
 
 from mediapipe_model_maker import gesture_recognizer
 
-datasetPath = "modelData"
-exportDir = "model"
+datasetPath = "models/hagrid_120k/dataset"
+exportDir = "models/hagrid_120k/model"
 
 trainingRatio = .8
 
