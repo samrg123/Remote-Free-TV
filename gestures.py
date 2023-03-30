@@ -70,12 +70,12 @@ class MotionGesture(Gesture):
 
 class GesturesClass:
 
-    def motionLeft(history):
+    def motionRight(history):
         if history[0] is not None and history[-1] is not None:
             return history[-1].x - history[0].x > 0.2
         return False 
 
-    def motionRight(history):
+    def motionLeft(history):
         if history[0] is not None and history[-1] is not None:
             return history[0].x - history[-1].x > 0.2
         return False
