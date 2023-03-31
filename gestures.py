@@ -190,16 +190,19 @@ class MotionGesture(Gesture):
 
 class GesturesClass:
 
-    left  = MotionGesture(["fist"], "Left",   MotionGesture.isReadyLeft)
-    right = MotionGesture(["fist"], "Right",  MotionGesture.isReadyRight)
-    up    = MotionGesture(["fist"], "Up",     MotionGesture.isReadyUp)
-    down  = MotionGesture(["fist"], "Down",   MotionGesture.isReadyDown)
-    
+    left  = MotionGesture(["fist", "dislike"], "Left",   MotionGesture.isReadyLeft)
+    right = MotionGesture(["fist", "dislike"], "Right",  MotionGesture.isReadyRight)
+    up    = MotionGesture(["fist", "dislike"], "Up",     MotionGesture.isReadyUp)
+    down  = MotionGesture(["fist", "dislike"], "Down",   MotionGesture.isReadyDown)
+
+    rewind      = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
+    fastForward = MotionGesture(["four"], "Fwd", MotionGesture.isReadyRight)
+
     back  = MotionGesture(["two_up_inverted", "peace_inverted"], "Back",   MotionGesture.isReadyLeft)
 
-    home   = StaticGesture(["rock", "dislike"], "Home")
-    play   = StaticGesture(["peace"], "Play")
-    select = StaticGesture(["call"],  "Select")
+    home   = StaticGesture(["rock"],            "Home")
+    play   = StaticGesture(["peace", "two_up"], "Play")
+    select = StaticGesture(["ok"],              "Select")
 
     def gestureList(self):
         
@@ -217,7 +220,7 @@ class GesturesClass:
 
     # placeholders / unsupported
     # power      = StaticGesture("ok", "Power")
-    # speach     = StaticGesture("three2", "Speach")
+    # speech     = StaticGesture("three2", "Speech")
     # volumeUp   = MotionGesture("one", "VolumeUp",   motionUp)
     # volumeDown = MotionGesture("one", "VolumeDown", motionDown)
 

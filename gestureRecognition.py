@@ -96,10 +96,7 @@ class GestureRecognizer:
         self.frameTime = time.time()
 
         self.renderImages:list[NamedImage] = []
-
-        self.lastGesture = None
-        self.lastGestureId = 0
-
+        
 
     def __del__(self):
 
