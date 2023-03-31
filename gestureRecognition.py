@@ -183,14 +183,14 @@ class GestureRecognizer:
 
         return hand_annotations
 
-
-    def detectGestures(self, handAnnotations) -> StaticGesture | MotionGesture | None:
-
+    def detectGestures(
+        self, handAnnotations, frameRate
+    ) -> StaticGesture | MotionGesture | None:
         gestures = []
 
         for gesture in Gestures:
-            if gesture.isDetected(self.frameId, handAnnotations):
-                gestures.append(gesture) 
+            if gesture.isDetected(self.frameId, handAnnotations, frameRate):
+                gestures.append(gesture)
 
         return gestures
 

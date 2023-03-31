@@ -21,44 +21,53 @@ class GestureStates:
     COOLDOWN = GestureState("COOLDOWN")
 
 
-    defaultWaitingFrames:int = 5
+class Gesture:
+    defaultWaitingTimeSeconds: int = 1.0
+    defaultElasticitySeconds = 0.25
 
-    def __init__(self, mpGestures:list[str], rokuKey:str, mpHandness:list[str] = ["left", "right"], 
-                 rokuCommand:str = "keypress", waitingFrames:int = defaultWaitingFrames) -> None:
-        
-        self.mpGestures  = mpGestures
-        self.rokuKey     = rokuKey
+    def __init__(
+        self,
+        mpGestures: list[str],
+        rokuKey: str,
+        mpHandness: list[str] = ["left", "right"],
+        rokuCommand: str = "keypress",
+        waitingTimeSeconds: int = defaultWaitingTimeSeconds,
+        gestureElasticitySeconds: int = defaultElasticitySeconds,
+    ) -> None:
+        self.mpGestures = mpGestures
+        self.rokuKey = rokuKey
         self.rokuCommand = rokuCommand
 
         self.waitingFrameId = 0
-        self.updateFrameId  = 0 
-        self.waitingFrames  = waitingFrames
+        self.updateFrameId = 0
+        self.waitingTimeSeconds = waitingTimeSeconds
 
         self.isReady = self._isReady
         self.isDeactivated = self._isDeactivated
 
-        self.state = GestureStates.IDLE 
+        self.state = GestureStates.IDLE
+        self.gestureElasticitySeconds = gestureElasticitySeconds
+        self.elasticFrameId = 0
 
     # Note: Virtual functions that can be overridden
     @staticmethod
-    def _isReady(self, handAnnotations) -> bool:
+    def _isReady(self, handAnnotations, frameRate) -> bool:
         elapsedFrames = self.updateFrameId - self.waitingFrameId
-        return elapsedFrames >= self.waitingFrames
-    
+        return elapsedFrames >= int(self.waitingTimeSeconds * frameRate)
+
     @staticmethod
-    def _isDeactivated(self, handAnnotations) -> bool:
-        # Default action is to immediately deactivate gesture so it only gets detected once        
+    def _isDeactivated(self, handAnnotations, frameRate) -> bool:
+        # Default action is to immediately deactivate gesture so it only gets detected once
         return True
 
     def setState(self, newState) -> None:
         if self.state == newState:
             return
 
-        log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
+        # log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
         self.state = newState
 
-    def updateState(self, frameId, handAnnotations) -> None:
-
+    def updateState(self, frameId, handAnnotations, frameRate) -> None:
         self.updateFrameId = frameId
 
         if handAnnotations is None or len(handAnnotations) == 0:
@@ -80,26 +89,30 @@ class GestureStates:
             if foundGesture:
                 self.waitingFrameId = frameId
                 self.setState(GestureStates.WAITING)
+                self.elasticFrameId = frameId
 
         # Note: Default Action for all cases below
         if not foundGesture:
-            self.setState(GestureStates.IDLE)
+            if frameId - self.elasticFrameId > int(
+                self.gestureElasticitySeconds * frameRate
+            ):
+                self.setState(GestureStates.IDLE)
             return
 
-        if self.state == GestureStates.WAITING: 
-            if self.isReady(self, handAnnotations):
+        self.elasticFrameId = frameId
+        if self.state == GestureStates.WAITING:
+            if self.isReady(self, handAnnotations, frameRate):
                 self.setState(GestureStates.ACTIVATED)
 
             # Note: No fallthrough, always force 1 waiting activated frame to allow for detection
             return
 
         if self.state == GestureStates.ACTIVATED:
-            if self.isDeactivated(self, handAnnotations):
+            if self.isDeactivated(self, handAnnotations, frameRate):
                 self.setState(GestureStates.COOLDOWN)
 
-
-    def isDetected(self, frameId, handAnnotations) -> bool:
-        self.updateState(frameId, handAnnotations)
+    def isDetected(self, frameId, handAnnotations, frameRate) -> bool:
+        self.updateState(frameId, handAnnotations, frameRate)
         return self.state == GestureStates.ACTIVATED
 
     def __str__(self) -> str:
@@ -110,64 +123,75 @@ class StaticGesture(Gesture):
     def __str__(self) -> str:
         return f"StaticGesture: {super().__str__()}"
 
-class MotionGesture(Gesture):
-    defaultDebounceLength:int = 15
-    defaultMotionThreshold:float = .2
 
-    def __init__(self, mpGestures: str, rokuKey: str, isReady, rokuCommand: str = "keypress", 
-                 debounceLength:int = defaultDebounceLength, motionThreshold:float = defaultMotionThreshold) -> None:
-        
+class MotionGesture(Gesture):
+    defaultDebounceTimeSeconds: float = 1.0
+    defaultMotionThreshold: float = 0.2
+
+    def __init__(
+        self,
+        mpGestures: str,
+        rokuKey: str,
+        isReady,
+        rokuCommand: str = "keypress",
+        debounceSeconds: int = defaultDebounceTimeSeconds,
+        motionThreshold: float = defaultMotionThreshold,
+    ) -> None:
         super().__init__(mpGestures, rokuKey, rokuCommand)
 
-        self.debounceLength = debounceLength
+        self.debounceSeconds = debounceSeconds
         self.motionThreshold = motionThreshold
 
         self.isReady = isReady
 
-        self.history = np.empty((debounceLength), dtype=object)
+        # Be able to hold up to 2 times the needed history at 15 FPS
+        self.historyLength = int(debounceSeconds * 15 * 2)
+        self.history = np.empty((self.historyLength), dtype=object)
 
-    def motionDelta(self) -> tuple[float, float]:
-        
-        if not self.history[0] or not self.history[-1]:
+    def motionDelta(self, frameRate) -> tuple[float, float]:
+        frameIdxDebounce = min(
+            int(self.debounceSeconds * frameRate), self.historyLength - 1
+        )
+
+        if not self.history[0] or not self.history[frameIdxDebounce]:
             return (0, 0)
 
-        xDelta = self.history[-1].x - self.history[0].x
-        yDelta = self.history[-1].y - self.history[0].y
+        xDelta = self.history[frameIdxDebounce].x - self.history[0].x
+        yDelta = self.history[frameIdxDebounce].y - self.history[0].y
 
         return (xDelta, yDelta)
 
     # Note: Left and Right motions flipped to account for mirroring of image
-   
-    def isReadyLeft(self, handAnnotations) -> bool:
-        if not self._isReady(self, handAnnotations):
+
+    def isReadyLeft(self, handAnnotations, frameRate) -> bool:
+        if not self._isReady(self, handAnnotations, frameRate):
             return False
 
-        xDelta, yDelta = self.motionDelta()
+        xDelta, yDelta = self.motionDelta(frameRate)
         return abs(xDelta) > abs(yDelta) and -xDelta >= self.motionThreshold
-    
-    def isReadyRight(self, handAnnotations) -> bool:
-        if not self._isReady(self, handAnnotations):
+
+    def isReadyRight(self, handAnnotations, frameRate) -> bool:
+        if not self._isReady(self, handAnnotations, frameRate):
             return False
 
-        xDelta, yDelta = self.motionDelta()
+        xDelta, yDelta = self.motionDelta(frameRate)
         return abs(xDelta) > abs(yDelta) and xDelta >= self.motionThreshold
 
-    def isReadyUp(self, handAnnotations) -> bool:
-        if not self._isReady(self, handAnnotations):
+    def isReadyUp(self, handAnnotations, frameRate) -> bool:
+        if not self._isReady(self, handAnnotations, frameRate):
             return False
 
-        xDelta, yDelta = self.motionDelta()
+        xDelta, yDelta = self.motionDelta(frameRate)
         return abs(yDelta) > abs(xDelta) and yDelta >= self.motionThreshold
 
-    def isReadyDown(self, handAnnotations) -> bool:
-        if not self._isReady(self, handAnnotations):
+    def isReadyDown(self, handAnnotations, frameRate) -> bool:
+        if not self._isReady(self, handAnnotations, frameRate):
             return False
 
-        xDelta, yDelta = self.motionDelta()
-        return abs(yDelta) > abs(xDelta) and -yDelta >= self.motionThreshold    
+        xDelta, yDelta = self.motionDelta(frameRate)
+        return abs(yDelta) > abs(xDelta) and -yDelta >= self.motionThreshold
 
-    def updateState(self, frameId, handAnnotations):
-
+    def updateState(self, frameId, handAnnotations, frameRate):
         # Update history
         self.history = np.roll(self.history, 1)
         self.history[0] = None
@@ -177,9 +201,9 @@ class MotionGesture(Gesture):
         if handAnnotations is not None and len(handAnnotations) > 0:
             landmarks, handedness, gestures = handAnnotations[0]
             if len(landmarks) > 0:
-                self.history[0] = landmarks[0]        
-        
-        super().updateState(frameId, handAnnotations)
+                self.history[0] = landmarks[0]
+
+        super().updateState(frameId, handAnnotations, frameRate)
 
     def __str__(self) -> str:
         return f"MotionGesture: {super().__str__()} | {self.isReady}"
