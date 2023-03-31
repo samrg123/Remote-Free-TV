@@ -1,13 +1,11 @@
-
 from util import *
 
 import numpy as np
 from typing import Callable
 
 
-
 class GestureState:
-    name:str
+    name: str
 
     def __init__(self, name) -> None:
         self.name = name
@@ -15,13 +13,13 @@ class GestureState:
     def __str__(self) -> str:
         return self.name
 
-class GestureStates:
-    IDLE      = GestureState("IDLE")
-    WAITING   = GestureState("WAITING")
-    ACTIVATED = GestureState("ACTIVATED")
-    COOLDOWN  = GestureState("COOLDOWN")
 
-class Gesture:
+class GestureStates:
+    IDLE = GestureState("IDLE")
+    WAITING = GestureState("WAITING")
+    ACTIVATED = GestureState("ACTIVATED")
+    COOLDOWN = GestureState("COOLDOWN")
+
 
     defaultWaitingFrames:int = 5
 
@@ -52,8 +50,7 @@ class Gesture:
         # Default action is to immediately deactivate gesture so it only gets detected once        
         return True
 
-    def setState(self, newState) -> None:        
-
+    def setState(self, newState) -> None:
         if self.state == newState:
             return
 
@@ -71,7 +68,7 @@ class Gesture:
         # TODO: right now we only look at the first annotation. We really should parse them all
         # TODO: Make sure we sync the detected hand to the same annotation each time
         # TODO: Account for handedness
-        landmarks, handedness, gestures = handAnnotations[0] 
+        landmarks, handedness, gestures = handAnnotations[0]
 
         foundGesture = False
         for gesture in gestures:
@@ -79,7 +76,7 @@ class Gesture:
                 foundGesture = True
                 break
 
-        if self.state == GestureStates.IDLE: 
+        if self.state == GestureStates.IDLE:
             if foundGesture:
                 self.waitingFrameId = frameId
                 self.setState(GestureStates.WAITING)
@@ -104,12 +101,12 @@ class Gesture:
     def isDetected(self, frameId, handAnnotations) -> bool:
         self.updateState(frameId, handAnnotations)
         return self.state == GestureStates.ACTIVATED
-    
+
     def __str__(self) -> str:
         return f"{self.mpGestures} | {self.rokuKey} | {self.rokuCommand} | {self.state}"
 
-class StaticGesture(Gesture):  
-  
+
+class StaticGesture(Gesture):
     def __str__(self) -> str:
         return f"StaticGesture: {super().__str__()}"
 
@@ -172,13 +169,12 @@ class MotionGesture(Gesture):
     def updateState(self, frameId, handAnnotations):
 
         # Update history
-        self.history = np.roll(self.history, 1)  
+        self.history = np.roll(self.history, 1)
         self.history[0] = None
-        
+
         # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
         # TODO: Right now we only look at first handAnnotation, we should process all of them!
-        if handAnnotations is not None and len(handAnnotations) > 0:    
-
+        if handAnnotations is not None and len(handAnnotations) > 0:
             landmarks, handedness, gestures = handAnnotations[0]
             if len(landmarks) > 0:
                 self.history[0] = landmarks[0]        
@@ -188,30 +184,30 @@ class MotionGesture(Gesture):
     def __str__(self) -> str:
         return f"MotionGesture: {super().__str__()} | {self.isReady}"
 
+
 class GesturesClass:
+    left = MotionGesture(["fist", "dislike"], "Left", MotionGesture.isReadyLeft)
+    right = MotionGesture(["fist", "dislike"], "Right", MotionGesture.isReadyRight)
+    up = MotionGesture(["fist", "dislike"], "Up", MotionGesture.isReadyUp)
+    down = MotionGesture(["fist", "dislike"], "Down", MotionGesture.isReadyDown)
 
-    left  = MotionGesture(["fist", "dislike"], "Left",   MotionGesture.isReadyLeft)
-    right = MotionGesture(["fist", "dislike"], "Right",  MotionGesture.isReadyRight)
-    up    = MotionGesture(["fist", "dislike"], "Up",     MotionGesture.isReadyUp)
-    down  = MotionGesture(["fist", "dislike"], "Down",   MotionGesture.isReadyDown)
-
-    rewind      = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
+    rewind = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
     fastForward = MotionGesture(["four"], "Fwd", MotionGesture.isReadyRight)
 
-    back  = MotionGesture(["two_up_inverted", "peace_inverted"], "Back",   MotionGesture.isReadyLeft)
+    back = MotionGesture(
+        ["two_up_inverted", "peace_inverted"], "Back", MotionGesture.isReadyLeft
+    )
 
-    home   = StaticGesture(["rock"],            "Home")
-    play   = StaticGesture(["peace", "two_up"], "Play")
-    select = StaticGesture(["ok"],              "Select")
+    home = StaticGesture(["rock"], "Home")
+    play = StaticGesture(["peace", "two_up"], "Play")
+    select = StaticGesture(["ok"], "Select")
 
     def gestureList(self):
-        
         gestures = []
         for itemName in dir(self):
-
             item = getattr(self, itemName)
             if isinstance(item, Gesture):
-                gestures.append(item) 
+                gestures.append(item)
 
         return gestures
 
@@ -223,5 +219,6 @@ class GesturesClass:
     # speech     = StaticGesture("three2", "Speech")
     # volumeUp   = MotionGesture("one", "VolumeUp",   motionUp)
     # volumeDown = MotionGesture("one", "VolumeDown", motionDown)
+
 
 Gestures = GesturesClass()
