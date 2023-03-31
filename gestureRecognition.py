@@ -56,7 +56,7 @@ class GestureRecognizer:
 
     DEBOUNCE_LENGTH:int = 15
 
-    def __init__(self, depthCamera, rokuUrl = RokuECP.defaultUrl, windowName:str = None) -> None:
+    def __init__(self, depthCamera, rokuUrl = RokuECP.defaultUrl, windowName:str = None, successiveGestureDebounceLength:int = 15) -> None:
 
         self.depthCamera = depthCamera
         self.rokuEcp = RokuECP(rokuUrl)
@@ -95,9 +95,8 @@ class GestureRecognizer:
         self.frameTime = time.time()
 
         self.renderImages:list[NamedImage] = []
-
-        self.lastGesture = None
-        self.lastGestureId = 0
+        
+        self.gestureHistory = np.empty((len(GesturesClass().gestureList()), successiveGestureDebounceLength), dtype=object)
 
 
     def __del__(self):
@@ -162,6 +161,8 @@ class GestureRecognizer:
         for gesture in Gestures:
             if gesture.isDetected(handAnnotations):
                 gestures.append(gesture) 
+            else:
+                gestures.append(None)
 
         return gestures
 
@@ -184,14 +185,12 @@ class GestureRecognizer:
         
         detectedGestures = self.detectGestures(handAnnotations)
     
-        for gesture in detectedGestures:
-
-            print(gesture)
-
-            if gesture != self.lastGesture:
-                self.lastGesture = gesture
-                self.lastGestureId = self.frameId
-                
+        self.gestureHistory = np.roll(self.gestureHistory, (1, 0), axis=(1, 0))  
+        
+        for i, gesture in enumerate(detectedGestures):
+            self.gestureHistory[i][0] = gesture is not None
+            if self.gestureHistory[i][0] and not self.gestureHistory[i][1:].any():
+                print(gesture)                
                 self.rokuEcp.sendCommand(gesture.rokuKey, gesture.rokuCommand)
             
         self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", colorFrame))

@@ -48,7 +48,6 @@ class MotionGesture(Gesture):
         self.history = np.roll(self.history, 1)  
         
         if handAnnotations:   
-
             # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
             foundGesture = False
             for (landmarks, handedness, gestures) in handAnnotations:
@@ -60,6 +59,8 @@ class MotionGesture(Gesture):
                 
                 if foundGesture:
                     break
+            if not foundGesture:                
+                self.history[0] = None
         else:
             self.history[0] = None
 
@@ -92,20 +93,17 @@ class GesturesClass:
 
     fastForward = MotionGesture("four",           "Left",   motionLeft)
     rewind      = MotionGesture("four",           "Right",  motionRight)
-    left        = MotionGesture("stop",           "Left",   motionLeft)
-    right       = MotionGesture("stop",           "Right",  motionRight)
-    up          = MotionGesture("stop",           "Up",     motionUp)
-    down        = MotionGesture("stop",           "Down",   motionDown)
-    # volumeUp      = MotionGesture("one",           "VolumeUp",        motionDown)
-    # volumeDown    = MotionGesture("one",           "VolumeDown",      motionUp)
-    back        = MotionGesture("peace_inverted", "Back",   motionLeft) #TODO: Make sure this works - ideally we would want sideways thumb
+    left        = MotionGesture("palm",           "Left",   motionLeft)
+    right       = MotionGesture("palm",           "Right",  motionRight)
+    up          = MotionGesture("palm",           "Up",     motionUp)
+    down        = MotionGesture("palm",           "Down",   motionDown)
 
     home        = StaticGesture("call", "Home")
-    select      = StaticGesture("like", "Select")
+    select      = StaticGesture("ok", "Select")
     play        = StaticGesture("peace", "Play")
+    back        = StaticGesture("peace_inverted", "Back") 
 
-    def gestureList(self):
-        
+    def gestureList(self):        
         gestures = []
         for itemName in dir(self):
 
@@ -117,11 +115,10 @@ class GesturesClass:
 
     def __iter__(self):
         return self.gestureList().__iter__()
-
-
+    
     # placeholders / unsupported
     # power      = StaticGesture("ok", "Power")
-    # speach     = StaticGesture("mute", "Speach")
+    # speech     = StaticGesture("mute", "Speech")
     # volumeUp   = MotionGesture("one", "VolumeUp",   motionUp)
     # volumeDown = MotionGesture("one", "VolumeDown", motionDown)
 
