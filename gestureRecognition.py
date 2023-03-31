@@ -56,10 +56,11 @@ class GestureRecognizer:
 
     DEBOUNCE_LENGTH:int = 15
 
-    def __init__(self, depthCamera, rokuUrl = RokuECP.defaultUrl, windowName:str = None) -> None:
+    def __init__(self, depthCamera, rokuUrl = RokuECP.defaultUrl, windowName:str = None, headless = False) -> None:
 
+        self.headless    = headless
         self.depthCamera = depthCamera
-        self.rokuEcp = RokuECP(rokuUrl)
+        self.rokuEcp     = RokuECP(rokuUrl)
 
         self.GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions(
 
@@ -87,9 +88,9 @@ class GestureRecognizer:
 
         self.mpGestureRecognizer = mp.tasks.vision.GestureRecognizer.create_from_options(self.GestureRecognizerOptions)
 
-
-        self.windowName = windowName if windowName is not None else f"GestureRecognizer: {type(depthCamera).__name__}"
-        cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
+        if not headless:
+            self.windowName = windowName if windowName is not None else f"GestureRecognizer: {type(depthCamera).__name__}"
+            cv.namedWindow(self.windowName, cv.WINDOW_NORMAL|cv.WINDOW_KEEPRATIO)
 
         self.frameId = 0
         self.frameTime = time.time()
@@ -106,7 +107,7 @@ class GestureRecognizer:
             self.mpGestureRecognizer.close()
 
     def __bool__(self):
-        return cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
+        return self.headless or cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
 
     def detectHands(self, framePixels, timestampMS):
 
@@ -126,31 +127,30 @@ class GestureRecognizer:
         if not results:
             return 
 
+        # TODO: Pack this in a class
         hand_annotations = list(zip(results.hand_landmarks, results.handedness, results.gestures))
 
-        height, width, depth = framePixels.shape
-        for (landmarks, handedness, gestures) in hand_annotations:
+        if not self.headless:
+            height, width, depth = framePixels.shape
+            for (landmarks, handedness, gestures) in hand_annotations:
 
-            # print(f'Handedness: {handedness}')
-            # print(f'Gesture: {gesture}')
+                # Draw box and gesture around image
+                landmarkCoords = np.array([ [int(landmark.x*width), int(landmark.y*height)] for landmark in landmarks ], dtype=int)
 
-            # Draw box and gesture around image
-            landmarkCoords = np.array([ [int(landmark.x*width), int(landmark.y*height)] for landmark in landmarks ], dtype=int)
+                x,y,w,h = cv.boundingRect(landmarkCoords)
+                cv.rectangle(framePixels, (x,y), (x+w,y+h), color=Color.green)
 
-            x,y,w,h = cv.boundingRect(landmarkCoords)
-            cv.rectangle(framePixels, (x,y), (x+w,y+h), color=Color.green)
+                gestureNames = ", ".join([gesture.category_name for gesture in gestures])
+                cv.putText(framePixels, gestureNames, org=(x,y), fontScale=1, color=Color.green, fontFace=cv.FONT_HERSHEY_COMPLEX)
 
-            gestureNames = ", ".join([gesture.category_name for gesture in gestures])
-            cv.putText(framePixels, gestureNames, org=(x,y), fontScale=1, color=Color.green, fontFace=cv.FONT_HERSHEY_COMPLEX)
-
-            # Draw hand skeleton
-            mp_drawing.draw_landmarks(
-                framePixels,
-                MakeNormalizedLandmarkList(landmarks),
-                mp_hands.HAND_CONNECTIONS,
-                mp_drawing_styles.get_default_hand_landmarks_style(),
-                mp_drawing_styles.get_default_hand_connections_style()
-            )
+                # Draw hand skeleton
+                mp_drawing.draw_landmarks(
+                    framePixels,
+                    MakeNormalizedLandmarkList(landmarks),
+                    mp_hands.HAND_CONNECTIONS,
+                    mp_drawing_styles.get_default_hand_landmarks_style(),
+                    mp_drawing_styles.get_default_hand_connections_style()
+                )
 
         return hand_annotations
 
@@ -160,7 +160,7 @@ class GestureRecognizer:
         gestures = []
 
         for gesture in Gestures:
-            if gesture.isDetected(handAnnotations):
+            if gesture.isDetected(self.frameId, handAnnotations):
                 gestures.append(gesture) 
 
         return gestures
@@ -179,29 +179,30 @@ class GestureRecognizer:
         frameRate = 1. / (frameTime - self.frameTime)
 
         # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
-        processedPixels = colorFrame.copy()
+        processedPixels = colorFrame
         handAnnotations = self.detectHands(processedPixels, 1000*frameTime)  
         
         detectedGestures = self.detectGestures(handAnnotations)
     
         for gesture in detectedGestures:
-
-            print(gesture)
-
-            if gesture != self.lastGesture:
-                self.lastGesture = gesture
-                self.lastGestureId = self.frameId
-                
-                self.rokuEcp.sendCommand(gesture.rokuKey, gesture.rokuCommand)
+            print(f"Detected: {gesture}")
+            self.rokuEcp.sendCommand(gesture.rokuKey, gesture.rokuCommand)
             
-        self.renderImages.append(NamedImage(f"Raw: {frameRate:.2f} FPS", colorFrame))
-        self.renderImages.append(NamedImage(f"Processed", processedPixels))
+        if self.headless:
+            print(f"FPS: {frameRate:.2f}", end="\r")
+
+        else:
+            # TODO: append depth image if we use it
+            self.renderImages.append(NamedImage(f"Processed: {frameRate:.2f} FPS", processedPixels))
         
         self.frameId+= 1 
         self.frameTime = frameTime
 
 
     def draw(self):
+
+        if self.headless:
+            return
         
         # Create a blank window image buffer
         _, _, windowWidth, windowHeight = windowRect = cv.getWindowImageRect(self.windowName)
@@ -268,6 +269,7 @@ def main():
     argParser.add_argument("-r", "--realsense", action="store_true", required=False, help="Uses Intel RealSense depth camera. If this flag isn't specified webcam is used instead.")
     argParser.add_argument("-w", "--webcam", metavar="int:port", action="store", default=None, required=False, help="Uses webcam at `port`")
     argParser.add_argument("--url",     required=False, action="store", metavar="URL", default=RokuECP.defaultUrl, help=f"Sets the url for connecting to the Roku. Default: '{RokuECP.defaultUrl}'")
+    argParser.add_argument("-H", "--headless", action="store_true", default=False, required=False, help="Disables video output to reduce latency")
 
     args = argParser.parse_args()
 
@@ -286,7 +288,7 @@ def main():
     else:
         camera = DepthWebcam(port = int(args.webcam))
 
-    gestureRecognizer = GestureRecognizer(depthCamera=camera, rokuUrl=args.url)
+    gestureRecognizer = GestureRecognizer(depthCamera=camera, rokuUrl=args.url, headless=args.headless)
 
     while gestureRecognizer:
         gestureRecognizer.update()

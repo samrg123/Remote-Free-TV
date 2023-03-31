@@ -1,104 +1,205 @@
 
+from util import *
+
 import numpy as np
 from typing import Callable
 
-class Gesture:
-    
-    # TODO: Add handedness!
 
-    def __init__(self, mpName:str, rokuKey:str, rokuCommand:str = "keypress") -> None:
-        self.mpGesture   = mpName
+
+class GestureState:
+    name:str
+
+    def __init__(self, name) -> None:
+        self.name = name
+
+    def __str__(self) -> str:
+        return self.name
+
+class GestureStates:
+    IDLE      = GestureState("IDLE")
+    WAITING   = GestureState("WAITING")
+    ACTIVATED = GestureState("ACTIVATED")
+    COOLDOWN  = GestureState("COOLDOWN")
+
+class Gesture:
+
+    defaultWaitingFrames:int = 5
+
+    def __init__(self, mpGestures:list[str], rokuKey:str, mpHandness:list[str] = ["left", "right"], 
+                 rokuCommand:str = "keypress", waitingFrames:int = defaultWaitingFrames) -> None:
+        
+        self.mpGestures  = mpGestures
         self.rokuKey     = rokuKey
         self.rokuCommand = rokuCommand
 
-    def isDetected():
-        """
-            Returns true if gesture is detected, false otherwise
-        """
-        return False
+        self.waitingFrameId = 0
+        self.updateFrameId  = 0 
+        self.waitingFrames  = waitingFrames
+
+        self.isReady = self._isReady
+        self.isDeactivated = self._isDeactivated
+
+        self.state = GestureStates.IDLE 
+
+    # Note: Virtual functions that can be overridden
+    @staticmethod
+    def _isReady(self, handAnnotations) -> bool:
+        elapsedFrames = self.updateFrameId - self.waitingFrameId
+        return elapsedFrames >= self.waitingFrames
+    
+    @staticmethod
+    def _isDeactivated(self, handAnnotations) -> bool:
+        # Default action is to immediately deactivate gesture so it only gets detected once        
+        return True
+
+    def setState(self, newState) -> None:        
+
+        if self.state == newState:
+            return
+
+        log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
+        self.state = newState
+
+    def updateState(self, frameId, handAnnotations) -> None:
+
+        self.updateFrameId = frameId
+
+        if handAnnotations is None or len(handAnnotations) == 0:
+            self.setState(GestureStates.IDLE)
+            return
+
+        # TODO: right now we only look at the first annotation. We really should parse them all
+        # TODO: Make sure we sync the detected hand to the same annotation each time
+        # TODO: Account for handedness
+        landmarks, handedness, gestures = handAnnotations[0] 
+
+        foundGesture = False
+        for gesture in gestures:
+            if gesture.category_name in self.mpGestures:
+                foundGesture = True
+                break
+
+        if self.state == GestureStates.IDLE: 
+            if foundGesture:
+                self.waitingFrameId = frameId
+                self.setState(GestureStates.WAITING)
+
+        # Note: Default Action for all cases below
+        if not foundGesture:
+            self.setState(GestureStates.IDLE)
+            return
+
+        if self.state == GestureStates.WAITING: 
+            if self.isReady(self, handAnnotations):
+                self.setState(GestureStates.ACTIVATED)
+
+            # Note: No fallthrough, always force 1 waiting activated frame to allow for detection
+            return
+
+        if self.state == GestureStates.ACTIVATED:
+            if self.isDeactivated(self, handAnnotations):
+                self.setState(GestureStates.COOLDOWN)
+
+
+    def isDetected(self, frameId, handAnnotations) -> bool:
+        self.updateState(frameId, handAnnotations)
+        return self.state == GestureStates.ACTIVATED
     
     def __str__(self) -> str:
-        return f"{self.mpGesture} | {self.rokuKey} | {self.rokuCommand}"
+        return f"{self.mpGestures} | {self.rokuKey} | {self.rokuCommand} | {self.state}"
 
-class StaticGesture(Gesture):
-    def isDetected(self, handAnnotations):
-        for (landmarks, handedness, gestures) in handAnnotations:
-            for gesture in gestures:
-                if gesture.category_name == self.mpGesture:
-                    return True
-        return False    
-    
+class StaticGesture(Gesture):  
+  
     def __str__(self) -> str:
         return f"StaticGesture: {super().__str__()}"
 
 class MotionGesture(Gesture):
     defaultDebounceLength:int = 15
+    defaultMotionThreshold:float = .2
 
-    def __init__(self, mpName: str, rokuKey: str, motionDetected, rokuCommand: str = "keypress", debounceLength = defaultDebounceLength) -> None:
-        super().__init__(mpName, rokuKey, rokuCommand)
+    def __init__(self, mpGestures: str, rokuKey: str, isReady, rokuCommand: str = "keypress", 
+                 debounceLength:int = defaultDebounceLength, motionThreshold:float = defaultMotionThreshold) -> None:
+        
+        super().__init__(mpGestures, rokuKey, rokuCommand)
 
         self.debounceLength = debounceLength
+        self.motionThreshold = motionThreshold
+
+        self.isReady = isReady
+
         self.history = np.empty((debounceLength), dtype=object)
 
-        self.motionDetected = motionDetected
-
-    def isDetected(self, handAnnotations):
+    def motionDelta(self) -> tuple[float, float]:
         
+        if not self.history[0] or not self.history[-1]:
+            return (0, 0)
+
+        xDelta = self.history[-1].x - self.history[0].x
+        yDelta = self.history[-1].y - self.history[0].y
+
+        return (xDelta, yDelta)
+
+    # Note: Left and Right motions flipped to account for mirroring of image
+   
+    def isReadyLeft(self, handAnnotations) -> bool:
+        if not self._isReady(self, handAnnotations):
+            return False
+
+        xDelta, yDelta = self.motionDelta()
+        return abs(xDelta) > abs(yDelta) and -xDelta >= self.motionThreshold
+    
+    def isReadyRight(self, handAnnotations) -> bool:
+        if not self._isReady(self, handAnnotations):
+            return False
+
+        xDelta, yDelta = self.motionDelta()
+        return abs(xDelta) > abs(yDelta) and xDelta >= self.motionThreshold
+
+    def isReadyUp(self, handAnnotations) -> bool:
+        if not self._isReady(self, handAnnotations):
+            return False
+
+        xDelta, yDelta = self.motionDelta()
+        return abs(yDelta) > abs(xDelta) and yDelta >= self.motionThreshold
+
+    def isReadyDown(self, handAnnotations) -> bool:
+        if not self._isReady(self, handAnnotations):
+            return False
+
+        xDelta, yDelta = self.motionDelta()
+        return abs(yDelta) > abs(xDelta) and -yDelta >= self.motionThreshold    
+
+    def updateState(self, frameId, handAnnotations):
+
         # Update history
         self.history = np.roll(self.history, 1)  
+        self.history[0] = None
         
-        if handAnnotations:   
+        # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
+        # TODO: Right now we only look at first handAnnotation, we should process all of them!
+        if handAnnotations is not None and len(handAnnotations) > 0:    
 
-            # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
-            foundGesture = False
-            for (landmarks, handedness, gestures) in handAnnotations:
-
-                for gesture in gestures:
-                    if gesture.category_name == self.mpGesture:
-                        self.history[0] = landmarks[0]
-                        foundGesture = True
-                
-                if foundGesture:
-                    break
-        else:
-            self.history[0] = None
-
-        return self.motionDetected(self.history)
+            landmarks, handedness, gestures = handAnnotations[0]
+            if len(landmarks) > 0:
+                self.history[0] = landmarks[0]        
+        
+        super().updateState(frameId, handAnnotations)
 
     def __str__(self) -> str:
-        return f"MotionGesture: {super().__str__()} | {self.motionDetected}"
+        return f"MotionGesture: {super().__str__()} | {self.isReady}"
 
 class GesturesClass:
 
-    def motionLeft(history):
-        if history[0] is not None and history[-1] is not None:
-            return history[-1].x - history[0].x > 0.2
-        return False 
-
-    def motionRight(history):
-        if history[0] is not None and history[-1] is not None:
-            return history[0].x - history[-1].x > 0.2
-        return False
+    left  = MotionGesture(["fist"], "Left",   MotionGesture.isReadyLeft)
+    right = MotionGesture(["fist"], "Right",  MotionGesture.isReadyRight)
+    up    = MotionGesture(["fist"], "Up",     MotionGesture.isReadyUp)
+    down  = MotionGesture(["fist"], "Down",   MotionGesture.isReadyDown)
     
-    def motionUp(history):
-        if history[0] is not None and history[-1] is not None:
-            return history[-1].y - history[0].y > 0.2
-        return False
-    
-    def motionDown(history):
-        if history[0] is not None and history[-1] is not None:
-            return history[0].y - history[-1].y > 0.2
-        return False
+    back  = MotionGesture(["two_up_inverted", "peace_inverted"], "Back",   MotionGesture.isReadyLeft)
 
-    left  = MotionGesture("stop",           "Left",   motionLeft)
-    right = MotionGesture("stop",           "Right",  motionRight)
-    up    = MotionGesture("stop",           "Up",     motionUp)
-    down  = MotionGesture("stop",           "Down",   motionDown)
-    back  = MotionGesture("peace_inverted", "Back",   motionLeft) #TODO: Make sure this works - ideally we would want sideways thumb
-
-    home   = StaticGesture("call", "Home")
-    select = StaticGesture("fist", "Select")
-    play   = StaticGesture("peace", "Play")
+    home   = StaticGesture(["rock", "dislike"], "Home")
+    play   = StaticGesture(["peace"], "Play")
+    select = StaticGesture(["call"],  "Select")
 
     def gestureList(self):
         
@@ -114,10 +215,9 @@ class GesturesClass:
     def __iter__(self):
         return self.gestureList().__iter__()
 
-
     # placeholders / unsupported
     # power      = StaticGesture("ok", "Power")
-    # speach     = StaticGesture("mute", "Speach")
+    # speach     = StaticGesture("three2", "Speach")
     # volumeUp   = MotionGesture("one", "VolumeUp",   motionUp)
     # volumeDown = MotionGesture("one", "VolumeDown", motionDown)
 
