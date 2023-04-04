@@ -2,3 +2,4 @@ mediapipe==0.9.2.1
 pyrealsense2==2.53.1.4623 
 requests==2.28.2
 opencv-python==4.7.0.72
+black==23.3.0
