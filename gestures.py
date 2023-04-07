@@ -3,7 +3,6 @@ from util import *
 import numpy as np
 from typing import Callable
 
-
 class GestureState:
     name: str
 
@@ -15,10 +14,10 @@ class GestureState:
 
 
 class GestureStates:
-    IDLE = GestureState("IDLE")
-    WAITING = GestureState("WAITING")
+    IDLE      = GestureState("IDLE")
+    WAITING   = GestureState("WAITING")
     ACTIVATED = GestureState("ACTIVATED")
-    COOLDOWN = GestureState("COOLDOWN")
+    COOLDOWN  = GestureState("COOLDOWN")
 
 
 class Gesture:
@@ -64,7 +63,7 @@ class Gesture:
         if self.state == newState:
             return
 
-        # log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
+        log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
         self.state = newState
 
     def updateState(self, frameId, handAnnotations, frameRate) -> None:
@@ -210,20 +209,20 @@ class MotionGesture(Gesture):
 
 
 class GesturesClass:
-    left = MotionGesture(["fist", "dislike"], "Left", MotionGesture.isReadyLeft)
-    right = MotionGesture(["fist", "dislike"], "Right", MotionGesture.isReadyRight)
-    up = MotionGesture(["fist", "dislike"], "Up", MotionGesture.isReadyUp)
-    down = MotionGesture(["fist", "dislike"], "Down", MotionGesture.isReadyDown)
+    left        = MotionGesture(["fist", "dislike"], "Left", MotionGesture.isReadyLeft)
+    right       = MotionGesture(["fist", "dislike"], "Right", MotionGesture.isReadyRight)
+    up          = MotionGesture(["fist", "dislike"], "Up", MotionGesture.isReadyUp)
+    down        = MotionGesture(["fist", "dislike"], "Down", MotionGesture.isReadyDown)
 
-    rewind = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
+    rewind      = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
     fastForward = MotionGesture(["four"], "Fwd", MotionGesture.isReadyRight)
 
     back = MotionGesture(
         ["two_up_inverted", "peace_inverted"], "Back", MotionGesture.isReadyLeft
     )
 
-    home = StaticGesture(["rock"], "Home")
-    play = StaticGesture(["peace", "two_up"], "Play")
+    home   = StaticGesture(["rock"], "Home")
+    play   = StaticGesture(["peace", "two_up"], "Play")
     select = StaticGesture(["ok"], "Select")
 
     def gestureList(self):

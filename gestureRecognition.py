@@ -289,6 +289,7 @@ class GestureRecognizer:
 
 
 def main():
+
     argParser = argparse.ArgumentParser(
         prog="gestureRecognition",
         description="Gesture classifier for Remote Free TV",
@@ -335,7 +336,20 @@ def main():
         help="Disables video output to reduce latency",
     )
 
+    argParser.add_argument(
+        "-v",
+        "--verbose",
+        action="store",
+        metavar="int:level",
+        default=verboseLevel.value,
+        required=False,
+        help=f"Sets to verbose logging level. LogLevels: {[str(x) for x in sorted(LogLevel.logLevelList())]}. Default: '{verboseLevel}'",
+    )
+
     args = argParser.parse_args()
+
+    setVerboseLevel(LogLevel.fromValue(int(args.verbose)))
+    print(f"Set verbose level to: '{verboseLevel}'")
 
     if bool(args.list):
         listVideoPorts()
