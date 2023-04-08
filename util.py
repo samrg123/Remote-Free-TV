@@ -30,10 +30,11 @@ class LogLevel:
             return self.value != logLevelType.value
 
 
-    Debug = Type("Debug", 2)
-    Warn  = Type("Warn",  1)
-    Error = Type("Error", 0) 
-    NONE  = Type("NONE", -1) 
+    Debug   = Type("Debug",   3)
+    Verbose = Type("Verbose", 2)
+    Warn    = Type("Warn",    1)
+    Error   = Type("Error",   0) 
+    NONE    = Type("NONE",   -1) 
 
     # TODO: This code is similar to gestures.py ... abstract out into generic class
     @staticmethod
@@ -55,16 +56,23 @@ class LogLevel:
         
         return LogLevel.Type("Unknown", value) 
 
-verboseLevel: int = LogLevel.Warn
+# Note: global variables are scoped to python modules, so we must control
+#       the verbose level using getters and setters 
+def getVerboseLevel() -> LogLevel.Type:
+    return _verboseLevel
 
-def setVerboseLevel(logLevel:LogLevel.Type) ->None:
-    global verboseLevel
-    verboseLevel = logLevel
+def setVerboseLevel(logLevel:LogLevel.Type) -> LogLevel.Type:
+    """ Sets to global verbose level. Returns the newly assigned verboseLevel"""
+    global _verboseLevel
+    _verboseLevel = logLevel
+    return _verboseLevel
 
-def log(msg, prefix: str = "MSG", logLevel: LogLevel.Type = LogLevel.Debug):
-    if verboseLevel >= logLevel:
+# Note: We don't assign directly to prevent it from being imported
+setVerboseLevel(LogLevel.Verbose)
+
+def log(msg, prefix: str = "MSG", logLevel: LogLevel.Type = LogLevel.Verbose):
+    if _verboseLevel >= logLevel:
         print(f"{prefix} - {msg}")
-
 
 def warn(msg):
     log(msg, prefix="WARN", logLevel=LogLevel.Warn)

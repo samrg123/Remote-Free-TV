@@ -1,7 +1,7 @@
 from util import *
+from cvUtil import *
 
-import numpy as np
-from typing import Callable
+from handAnnotations import *
 
 class GestureState:
     name: str
@@ -12,110 +12,174 @@ class GestureState:
     def __str__(self) -> str:
         return self.name
 
-
 class GestureStates:
     IDLE      = GestureState("IDLE")
     WAITING   = GestureState("WAITING")
     ACTIVATED = GestureState("ACTIVATED")
     COOLDOWN  = GestureState("COOLDOWN")
 
-
 class Gesture:
-    defaultWaitingTimeSeconds: int = 1.0
-    defaultElasticitySeconds = 0.25
+    defaultRokuCommand: str = "keypress"
+
+    # Note: mediapipe assumes image is flipped so "Left" is actually right hand
+    defaultMpHandedness:list[str] = ["Left"]
+    defaultMpGestureBlacklist: list[str] = []
+
+    defaultWaitingSeconds: float = 0.25
+    defaultElasticitySeconds: float = 0.25
 
     def __init__(
         self,
         mpGestures: list[str],
         rokuKey: str,
-        mpHandness: list[str] = ["left", "right"],
-        rokuCommand: str = "keypress",
-        waitingTimeSeconds: int = defaultWaitingTimeSeconds,
-        gestureElasticitySeconds: int = defaultElasticitySeconds,
+        mpHandedness: list[str] = defaultMpHandedness,
+        blacklistMpGestures: list[str] = defaultMpGestureBlacklist,
+        rokuCommand: str = defaultRokuCommand,
+        waitingSeconds: float = defaultWaitingSeconds,
+        elasticitySeconds: float = defaultElasticitySeconds
     ) -> None:
+
         self.mpGestures = mpGestures
+        self.mpHandedness = mpHandedness
+        self.blacklistMpGestures = blacklistMpGestures
+
         self.rokuKey = rokuKey
         self.rokuCommand = rokuCommand
 
-        self.waitingFrameId = 0
-        self.updateFrameId = 0
-        self.waitingTimeSeconds = waitingTimeSeconds
+        self.updateFrameTime = 0
+        self.waitingFrameTime = 0
+        self.waitingSeconds = waitingSeconds
+
+        self.lastGestureTime = 0
+        self.elasticitySeconds = elasticitySeconds
 
         self.isReady = self._isReady
+        self.isReset = self._isReset
         self.isDeactivated = self._isDeactivated
 
         self.state = GestureStates.IDLE
-        self.gestureElasticitySeconds = gestureElasticitySeconds
-        self.elasticFrameId = 0
+
+    def reset(self) -> None:
+        # TODO: Implement this correctly... should we reset the times here?
+        pass
 
     # Note: Virtual functions that can be overridden
     @staticmethod
-    def _isReady(self, handAnnotations, frameRate) -> bool:
-        elapsedFrames = self.updateFrameId - self.waitingFrameId
-        return elapsedFrames >= int(self.waitingTimeSeconds * frameRate)
+    def _isReady(self, handAnnotations:HandAnnotations) -> bool:
+        elapsedTime = self.updateFrameTime - self.waitingFrameTime
+        return elapsedTime >= self.waitingSeconds
 
     @staticmethod
-    def _isDeactivated(self, handAnnotations, frameRate) -> bool:
+    def _isReset(self, handAnnotations:HandAnnotations) -> bool:
+        elapsedTime = self.updateFrameTime - self.lastGestureTime 
+        return elapsedTime >= self.elasticitySeconds
+
+    @staticmethod
+    def _isDeactivated(self, handAnnotations:HandAnnotations) -> bool:
         # Default action is to immediately deactivate gesture so it only gets detected once
         return True
 
-    def setState(self, newState) -> None:
+    def setState(self, newState:GestureState) -> None:
         if self.state == newState:
             return
 
-        log(f"Gesture: {self} | StateChange {self.state} -> {newState}")
+        log(f"Gesture: {self} | StateChange {self.state} -> {newState}", logLevel=LogLevel.Debug)
         self.state = newState
 
-    def updateState(self, frameId, handAnnotations, frameRate) -> None:
-        self.updateFrameId = frameId
+    @staticmethod
+    def mostLikely(
+        handAnnotations:HandAnnotations, 
+        handFilter:list[str], 
+        gestureFilter:list[str]
+    ) -> HandFeatures:
+            
+        maxGestureScore = -1
+        maxFeature = HandFeatures()
+        for feature in handAnnotations.features:
 
-        if handAnnotations is None or len(handAnnotations) == 0:
-            self.setState(GestureStates.IDLE)
-            return
+            maxHandednessScore = -1
+            maxHandedness = []
+            for hand in feature.handedness:
+                
+                if hand.score > maxHandednessScore and \
+                    hand.category_name in handFilter:
 
-        # TODO: right now we only look at the first annotation. We really should parse them all
-        # TODO: Make sure we sync the detected hand to the same annotation each time
-        # TODO: Account for handedness
-        landmarks, handedness, gestures = handAnnotations[0]
+                    maxHandednessScore = hand.score
+                    maxHandedness = hand
 
-        foundGesture = False
-        for gesture in gestures:
-            if gesture.category_name in self.mpGestures:
-                foundGesture = True
-                break
+            if not maxHandedness:
+                continue
+
+            for gesture in feature.gestures:
+
+                if gesture.score > maxGestureScore and \
+                    gesture.category_name in gestureFilter:
+                    
+                    maxGestureScore = gesture.score
+                    maxFeature = HandFeatures(
+                        landmarks=feature.landmarks, 
+                        gestures=[gesture], 
+                        handedness=[maxHandedness]
+                    )
+
+        return maxFeature
+
+    def mostLikelyMatch(self, handAnnotations:HandAnnotations) -> HandFeatures:
+        return self.mostLikely(handAnnotations, handFilter=self.mpHandedness, gestureFilter=self.mpGestures)
+
+    def mostLikelyBlackList(self, handAnnotations:HandAnnotations) -> HandFeatures:
+        return self.mostLikely(handAnnotations, handFilter=self.mpHandedness, gestureFilter=self.blacklistMpGestures)
+
+    def updateState(self, handAnnotations:HandAnnotations) -> None:
+        self.updateFrameTime = handAnnotations.frameTime
+
+        # TODO: experiment with this... may help cleanup fast movements, but right now things
+        #       are working pretty well with a short elasticity
+        #       basically we want to see if there is a mostLikelyBlackList
+        #       if there is then we need need to force state into COOLDOWN/IDLE mode?
+        # mostLikelyBlackList = self.mostLikelyBlackList(handAnnotations)
+        # if mostLikelyBlackList.gestures:
+        # self.setState(GestureStates.IDLE)
+        #   return
+
+        mostLikelyMatch = self.mostLikelyMatch(handAnnotations)
+        foundGesture = (len(mostLikelyMatch.gestures) > 0)
+
+        # Warn: There is a lot a nuance on how these conditions fallthrough 
+        #       be cautious while editing
 
         if self.state == GestureStates.IDLE:
             if foundGesture:
-                self.waitingFrameId = frameId
-                self.setState(GestureStates.WAITING)
-                self.elasticFrameId = frameId
+                self.waitingFrameTime = handAnnotations.frameTime
+                self.setState(GestureStates.WAITING)  
 
-        # Note: Default Action for all cases below
-        if not foundGesture:
-            if frameId - self.elasticFrameId > int(
-                self.gestureElasticitySeconds * frameRate
-            ):
-                self.setState(GestureStates.IDLE)
-            return
+        if foundGesture:
+            self.lastGestureTime = handAnnotations.frameTime
 
-        self.elasticFrameId = frameId
-        if self.state == GestureStates.WAITING:
-            if self.isReady(self, handAnnotations, frameRate):
-                self.setState(GestureStates.ACTIVATED)
+            if self.state == GestureStates.WAITING:
+                if self.isReady(self, handAnnotations):
+                    self.setState(GestureStates.ACTIVATED)
 
-            # Note: No fallthrough, always force 1 waiting activated frame to allow for detection
-            return
+                # Note: No fallthrough, always stay in waiting state until ready and 
+                #       force at least 1 activated frame to allow for detection
+                return
 
         if self.state == GestureStates.ACTIVATED:
-            if self.isDeactivated(self, handAnnotations, frameRate):
+            if self.isDeactivated(self, handAnnotations):
                 self.setState(GestureStates.COOLDOWN)
 
-    def isDetected(self, frameId, handAnnotations, frameRate) -> bool:
-        self.updateState(frameId, handAnnotations, frameRate)
+        if self.isReset(self, handAnnotations):
+
+            #TODO: should we really call reset here? .. do we even need reset anymore?    
+            self.setState(GestureStates.IDLE)
+
+
+    def isDetected(self, handAnnotations:HandAnnotations) -> bool:
+        self.updateState(handAnnotations)
         return self.state == GestureStates.ACTIVATED
 
     def __str__(self) -> str:
-        return f"{self.mpGestures} | {self.rokuKey} | {self.rokuCommand} | {self.state}"
+        return f"{self.mpGestures} | {self.mpHandedness} | {self.rokuKey} | {self.rokuCommand} | {self.state}"
 
 
 class StaticGesture(Gesture):
@@ -124,98 +188,159 @@ class StaticGesture(Gesture):
 
 
 class MotionGesture(Gesture):
-    defaultDebounceTimeSeconds: float = 1.0
+
+    # TODO: make this change with distance AKA size of hand's bounding box?
     defaultMotionThreshold: float = 0.2
+    defaultMotionHistoryDuration: float = 2.0
 
     def __init__(
         self,
         mpGestures: str,
         rokuKey: str,
         isReady,
-        rokuCommand: str = "keypress",
-        debounceSeconds: int = defaultDebounceTimeSeconds,
+        mpHandedness: list[str] = Gesture.defaultMpHandedness,
+        mpGestureBlacklist: list[str] = Gesture.defaultMpGestureBlacklist,
+        rokuCommand: str = Gesture.defaultRokuCommand,
+        waitingSeconds: int = Gesture.defaultWaitingSeconds,
+        elasticitySeconds: int = Gesture.defaultElasticitySeconds,
         motionThreshold: float = defaultMotionThreshold,
+        historyDuration: float = defaultMotionHistoryDuration
     ) -> None:
-        super().__init__(mpGestures, rokuKey, rokuCommand)
 
-        self.debounceSeconds = debounceSeconds
-        self.motionThreshold = motionThreshold
+        super().__init__(
+            mpGestures = mpGestures,
+            rokuKey = rokuKey,
+            mpHandedness = mpHandedness,
+            blacklistMpGestures= mpGestureBlacklist,
+            rokuCommand = rokuCommand,
+            waitingSeconds = waitingSeconds,
+            elasticitySeconds = elasticitySeconds
+        )
 
         self.isReady = isReady
 
-        # Be able to hold up to 2 times the needed history at 15 FPS
-        self.historyLength = int(debounceSeconds * 15 * 2)
-        self.history = np.empty((self.historyLength), dtype=object)
+        self.motionThreshold = motionThreshold
+        self.historyDuration = historyDuration
 
-    def motionDelta(self, frameRate) -> tuple[float, float]:
-        frameIdxDebounce = min(
-            int(self.debounceSeconds * frameRate), self.historyLength - 1
-        )
+        self.history = []
 
-        if not self.history[0] or not self.history[frameIdxDebounce]:
-            return (0, 0)
+    def reset(self) -> None:
+        self.history = self.history[-1:]
+        super().reset()
+        log(f"Reset: {self}", logLevel=LogLevel.Debug)
 
-        xDelta = self.history[frameIdxDebounce].x - self.history[0].x
-        yDelta = self.history[frameIdxDebounce].y - self.history[0].y
+    def mostLikelyMatch(self, handAnnotations:HandAnnotations) -> HandFeatures:
+        mostLikelyMatch = super().mostLikelyMatch(handAnnotations)
 
-        return (xDelta, yDelta)
+        # Note: we cache the results in handAnnotations so we can continually refer back to them
+        # Note: we handAnnotations to store cached result so garbage collection automatically cleans
+        #       up after us the handAnnotation is removed from history
+        if not hasattr(handAnnotations, "mostLikelyMatch"):
+            handAnnotations.mostLikelyMatch = {}
+        handAnnotations.mostLikelyMatch[self] = mostLikelyMatch
+        
+        return mostLikelyMatch
+
+    def setState(self, newState: GestureState) -> None:
+
+        if newState == GestureStates.WAITING or newState == GestureStates.ACTIVATED:
+            self.reset()
+
+        super().setState(newState)
+
+    def motionDelta(self, handAnnotations:HandAnnotations) -> tuple[float, float]:
+
+        currentMostLikelyMatch:HandFeatures = handAnnotations.mostLikelyMatch[self]
+        
+        currentMostLikelyWristLandmark = currentMostLikelyMatch.landmark(MPHandLandmark.WRIST)
+        if currentMostLikelyWristLandmark is None:
+            return (0,0)
+        
+        maxDistSquard = 0
+        maxDxDy = (0, 0)
+        for annotation in self.history:
+
+            mostLikelyMatch:HandFeatures = annotation.mostLikelyMatch[self]
+            wristLandmark = mostLikelyMatch.landmark(MPHandLandmark.WRIST)
+            if wristLandmark is None:
+                continue
+
+            
+            dx = wristLandmark.x - currentMostLikelyWristLandmark.x
+            dy = wristLandmark.y - currentMostLikelyWristLandmark.y
+            
+            distSquared = dx*dx + dy*dy
+
+            if distSquared > maxDistSquard:
+                maxDistSquard = distSquared
+                maxDxDy = (dx, dy)
+        
+        return maxDxDy
+
+    def isReadyXY(self, handAnnotations:HandAnnotations, deltaIndex:int, deltaSign:int) -> bool:
+        if not self._isReady(self, handAnnotations):
+            return False
+
+        deltas = self.motionDelta(handAnnotations)
+
+        absDeltas = np.abs(deltas)
+        maxAbsDelta = np.max(absDeltas)
+
+        delta = deltas[deltaIndex]*deltaSign
+        absDelta = absDeltas[deltaIndex]
+
+        if absDelta == maxAbsDelta and delta >= self.motionThreshold:
+            return True
+
+        # Went too far from center - reset history so we don't activate 
+        # TODO: Does this help at all ... or should we just get rid of it?
+        if maxAbsDelta > self.motionThreshold:
+            log(f"Exceed motionThreshold in wrong direction. Resetting: {maxAbsDelta}", logLevel=LogLevel.Debug)
+            self.reset()
+
+        return False
 
     # Note: Left and Right motions flipped to account for mirroring of image
+    def isReadyLeft(self, handAnnotations:HandAnnotations) -> bool:
+        return self.isReadyXY(handAnnotations, deltaIndex=0, deltaSign=-1)
 
-    def isReadyLeft(self, handAnnotations, frameRate) -> bool:
-        if not self._isReady(self, handAnnotations, frameRate):
-            return False
+    def isReadyRight(self, handAnnotations:HandAnnotations) -> bool:
+        return self.isReadyXY(handAnnotations, deltaIndex=0, deltaSign=1)
 
-        xDelta, yDelta = self.motionDelta(frameRate)
-        return abs(xDelta) > abs(yDelta) and -xDelta >= self.motionThreshold
+    def isReadyUp(self, handAnnotations:HandAnnotations) -> bool:
+        return self.isReadyXY(handAnnotations, deltaIndex=1, deltaSign=1)
 
-    def isReadyRight(self, handAnnotations, frameRate) -> bool:
-        if not self._isReady(self, handAnnotations, frameRate):
-            return False
+    def isReadyDown(self, handAnnotations:HandAnnotations) -> bool:
+        return self.isReadyXY(handAnnotations, deltaIndex=1, deltaSign=-1)        
 
-        xDelta, yDelta = self.motionDelta(frameRate)
-        return abs(xDelta) > abs(yDelta) and xDelta >= self.motionThreshold
+    def updateState(self, handAnnotations:HandAnnotations):
 
-    def isReadyUp(self, handAnnotations, frameRate) -> bool:
-        if not self._isReady(self, handAnnotations, frameRate):
-            return False
+        # find last expired index
+        # TODO: replace this with binary search
+        nonExpiredHistoryIndex = len(self.history)
+        for i in range(len(self.history)):
+            oldAnnotation = self.history[i]
+            ellapsedTime = handAnnotations.frameTime - oldAnnotation.frameTime
+            if ellapsedTime <= self.historyDuration:
+                nonExpiredHistoryIndex = i
+                break
 
-        xDelta, yDelta = self.motionDelta(frameRate)
-        return abs(yDelta) > abs(xDelta) and yDelta >= self.motionThreshold
-
-    def isReadyDown(self, handAnnotations, frameRate) -> bool:
-        if not self._isReady(self, handAnnotations, frameRate):
-            return False
-
-        xDelta, yDelta = self.motionDelta(frameRate)
-        return abs(yDelta) > abs(xDelta) and -yDelta >= self.motionThreshold
-
-    def updateState(self, frameId, handAnnotations, frameRate):
-        # Update history
-        self.history = np.roll(self.history, 1)
-        self.history[0] = None
-
-        # From user's perspective, x,y at 0,0 is in top right, 1,1 is bottom left
-        # TODO: Right now we only look at first handAnnotation, we should process all of them!
-        if handAnnotations is not None and len(handAnnotations) > 0:
-            landmarks, handedness, gestures = handAnnotations[0]
-            if len(landmarks) > 0:
-                self.history[0] = landmarks[0]
-
-        super().updateState(frameId, handAnnotations, frameRate)
+        # update history chopping off expired indices
+        self.history = self.history[nonExpiredHistoryIndex:] + [handAnnotations]        
+        super().updateState(handAnnotations)
 
     def __str__(self) -> str:
-        return f"MotionGesture: {super().__str__()} | {self.isReady}"
+        return f"MotionGesture: {super().__str__()} | {self.isReady.__name__}"
 
 
 class GesturesClass:
-    left        = MotionGesture(["fist", "dislike"], "Left", MotionGesture.isReadyLeft)
-    right       = MotionGesture(["fist", "dislike"], "Right", MotionGesture.isReadyRight)
-    up          = MotionGesture(["fist", "dislike"], "Up", MotionGesture.isReadyUp)
-    down        = MotionGesture(["fist", "dislike"], "Down", MotionGesture.isReadyDown)
+    left        = MotionGesture(["fist", "dislike"], "Left",  MotionGesture.isReadyLeft,  mpGestureBlacklist=["palm", "stop"])
+    right       = MotionGesture(["fist", "dislike"], "Right", MotionGesture.isReadyRight, mpGestureBlacklist=["palm", "stop"])
+    up          = MotionGesture(["fist", "dislike"], "Up",    MotionGesture.isReadyUp,    mpGestureBlacklist=["palm", "stop"])
+    down        = MotionGesture(["fist", "dislike"], "Down",  MotionGesture.isReadyDown,  mpGestureBlacklist=["palm", "stop"])
 
-    rewind      = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft)
-    fastForward = MotionGesture(["four"], "Fwd", MotionGesture.isReadyRight)
+    rewind      = MotionGesture(["four", "stop", "palm"], "Rev", MotionGesture.isReadyLeft )
+    fastForward = MotionGesture(["four", "stop", "palm"], "Fwd", MotionGesture.isReadyRight)
 
     back = MotionGesture(
         ["two_up_inverted", "peace_inverted"], "Back", MotionGesture.isReadyLeft
@@ -225,7 +350,7 @@ class GesturesClass:
     play   = StaticGesture(["peace", "two_up"], "Play")
     select = StaticGesture(["ok"], "Select")
 
-    def gestureList(self):
+    def gestureList(self) -> list[Gesture]:
         gestures = []
         for itemName in dir(self):
             item = getattr(self, itemName)

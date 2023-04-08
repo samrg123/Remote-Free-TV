@@ -10,7 +10,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/gestureRecognition.py",
 
-            "args": ["-w", "0", "--url", "http://192.168.0.107:8060"],
+            "args": ["-w", "0", "--url", "http://192.168.0.107:8060", "-v", "3"],
 
             "console": "integratedTerminal",
             "justMyCode": true

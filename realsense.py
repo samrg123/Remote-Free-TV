@@ -1,11 +1,13 @@
-from util import *
+from depthCamera import *
 
 import numpy as np
 import pyrealsense2 as rs
 
 
-class RealSenseCamera:
+class RealSenseCamera(DepthCamera):
     def __init__(self) -> None:
+        super().__init__()
+
         # Configure depth and color streams
         self.pipeline = rs.pipeline()
         self.config = rs.config()
@@ -34,16 +36,18 @@ class RealSenseCamera:
 
         # Start streaming
         self.pipeline.start(self.config)
+        super().start()
+
 
     @staticmethod
-    def frame2Pixles(frame):
+    def frame2Pixels(frame):
         return np.asanyarray(frame.get_data()) if frame else None
 
-    def getFrames(self):
+    def getPixels(self):
         frames = self.pipeline.wait_for_frames()
 
-        colorPixels = self.frame2Pixles(frames.get_color_frame())
-        depthPixels = self.frame2Pixles(frames.get_depth_frame())
+        colorPixels = self.frame2Pixels(frames.get_color_frame())
+        depthPixels = self.frame2Pixels(frames.get_depth_frame())
 
         if colorPixels is None:
             warn(f"Failed to capture realsense color frame")

@@ -1,12 +1,20 @@
-import cv2 as cv
-
 from util import *
+from cvUtil import *
 
+from depthCamera import *
 
-class DepthWebcam:
+class DepthWebcam(DepthCamera):
+        
     def __init__(
-        self, port: int = 0, width: int = 1280, height: int = 720, fps: int = 30
+        self, 
+        port:int = 0, 
+        width:int = 1280, 
+        height:int = 720, 
+        fps:int = 30,
+        bufferSize:int = 2
     ) -> None:
+        super().__init__()
+        
         self.port = port
         self.camera = cv.VideoCapture(port)
 
@@ -17,12 +25,17 @@ class DepthWebcam:
         self.height = height
 
         self.camera.set(cv.CAP_PROP_FRAME_WIDTH, width)
-        self.camera.set(cv.CAP_PROP_FRAME_HEIGHT, height)
+        self.camera.set(cv.CAP_PROP_FRAME_HEIGHT, height) 
 
         self.fps = fps
         self.camera.set(cv.CAP_PROP_FPS, fps)
 
-    def getFrames(self):
+        self.bufferSize = bufferSize
+        self.camera.set(cv.CAP_PROP_BUFFERSIZE, bufferSize)
+        
+        super().start()
+
+    def getPixels(self):
         validFrame, colorPixels = self.camera.read()
 
         if not validFrame:
