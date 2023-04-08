@@ -25,7 +25,7 @@ class Gesture:
     defaultMpHandedness:list[str] = ["Left"]
     defaultMpGestureBlacklist: list[str] = []
 
-    defaultWaitingSeconds: float = 0.25
+    defaultWaitingSeconds: float = 0.5
     defaultElasticitySeconds: float = 0.25
 
     def __init__(
