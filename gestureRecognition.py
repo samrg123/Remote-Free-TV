@@ -345,7 +345,7 @@ def main():
     gestureRecognizer = GestureRecognizer(
         depthCamera=camera, rokuUrl=args.url, headless=args.headless,
 
-        # TODO: Make sure gestures are threadsafe and then try experimenting with this
+        # TODO: Make sure gestures are thread safe and then try experimenting with this
         # Also experiment with number of async frames (can pass them in as args like: '--async 3')
         asyncUpdate=False
     )
@@ -353,7 +353,7 @@ def main():
     while gestureRecognizer:
         gestureRecognizer.update()
 
-        # TODO: place drawing on seperate thread
+        # TODO: place drawing on separate thread
         #       so it doesn't bog down queuing up async frames 
         gestureRecognizer.draw()
 

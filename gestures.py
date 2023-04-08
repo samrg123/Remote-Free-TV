@@ -59,10 +59,6 @@ class Gesture:
 
         self.state = GestureStates.IDLE
 
-    def reset(self) -> None:
-        # TODO: Implement this correctly... should we reset the times here?
-        pass
-
     # Note: Virtual functions that can be overridden
     @staticmethod
     def _isReady(self, handAnnotations:HandAnnotations) -> bool:
@@ -169,8 +165,6 @@ class Gesture:
                 self.setState(GestureStates.COOLDOWN)
 
         if self.isReset(self, handAnnotations):
-
-            #TODO: should we really call reset here? .. do we even need reset anymore?    
             self.setState(GestureStates.IDLE)
 
 
@@ -224,10 +218,9 @@ class MotionGesture(Gesture):
 
         self.history = []
 
-    def reset(self) -> None:
+    def resetHistory(self) -> None:
         self.history = self.history[-1:]
-        super().reset()
-        log(f"Reset: {self}", logLevel=LogLevel.Debug)
+        log(f"Reset history: {self}", logLevel=LogLevel.Debug)
 
     def mostLikelyMatch(self, handAnnotations:HandAnnotations) -> HandFeatures:
         mostLikelyMatch = super().mostLikelyMatch(handAnnotations)
@@ -244,7 +237,7 @@ class MotionGesture(Gesture):
     def setState(self, newState: GestureState) -> None:
 
         if newState == GestureStates.WAITING or newState == GestureStates.ACTIVATED:
-            self.reset()
+            self.resetHistory()
 
         super().setState(newState)
 
@@ -293,10 +286,9 @@ class MotionGesture(Gesture):
             return True
 
         # Went too far from center - reset history so we don't activate 
-        # TODO: Does this help at all ... or should we just get rid of it?
         if maxAbsDelta > self.motionThreshold:
             log(f"Exceed motionThreshold in wrong direction. Resetting: {maxAbsDelta}", logLevel=LogLevel.Debug)
-            self.reset()
+            self.resetHistory()
 
         return False
 
@@ -339,8 +331,8 @@ class GesturesClass:
     up          = MotionGesture(["fist", "dislike"], "Up",    MotionGesture.isReadyUp,    mpGestureBlacklist=["palm", "stop"])
     down        = MotionGesture(["fist", "dislike"], "Down",  MotionGesture.isReadyDown,  mpGestureBlacklist=["palm", "stop"])
 
-    rewind      = MotionGesture(["four", "stop", "palm"], "Rev", MotionGesture.isReadyLeft )
-    fastForward = MotionGesture(["four", "stop", "palm"], "Fwd", MotionGesture.isReadyRight)
+    rewind      = MotionGesture(["four"], "Rev", MotionGesture.isReadyLeft )
+    fastForward = MotionGesture(["four"], "Fwd", MotionGesture.isReadyRight)
 
     back = MotionGesture(
         ["two_up_inverted", "peace_inverted"], "Back", MotionGesture.isReadyLeft
