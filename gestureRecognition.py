@@ -2,62 +2,19 @@ import argparse
 
 import math
 import time
-import cv2 as cv
 import numpy as np
 
 from util import *
 from cvUtil import *
+from mpUtil import *
 
-from realsense import RealSenseCamera
-from webcam import DepthWebcam
+from realsense import *
+from webcam import *
 
-
-import mediapipe as mp
-from mediapipe.framework.formats import landmark_pb2
-from mediapipe.tasks.python.components.processors import (
-    ClassifierOptions as MPClassifierOptions,
-)
+from handAnnotations import *
 
 from rokuECP import RokuECP
 from gestures import *
-
-# TODO: Clean this up ... right now these are hacks to get around nasty wrapper types. Consider MediaPipe util?
-
-mp_drawing = mp.solutions.drawing_utils
-mp_drawing_styles = mp.solutions.drawing_styles
-mp_hands = mp.solutions.hands
-
-
-def MakeMPClassifierOptions(
-    display_names_locale="en",
-    max_results=-1,
-    score_threshold=0,
-    category_allowlist=[],
-    category_denylist=[],
-) -> MPClassifierOptions:
-    options = MPClassifierOptions()
-
-    options.display_names_locale = display_names_locale
-    options.max_results = max_results
-    options.score_threshold = score_threshold
-    options.category_allowlist = category_allowlist
-    options.category_denylist = category_denylist
-
-    return options
-
-
-def MakeNormalizedLandmarkList(landmarks) -> landmark_pb2.NormalizedLandmarkList:
-    landmarkProto = landmark_pb2.NormalizedLandmarkList()
-
-    landmarkProto.landmark.extend(
-        [
-            landmark_pb2.NormalizedLandmark(x=landmark.x, y=landmark.y, z=landmark.z)
-            for landmark in landmarks
-        ]
-    )
-
-    return landmarkProto
-
 
 class GestureRecognizer:
     def __init__(
@@ -66,16 +23,27 @@ class GestureRecognizer:
         rokuUrl=RokuECP.defaultUrl,
         windowName: str = None,
         headless=False,
+        asyncUpdate=False
     ) -> None:
+        
         self.headless = headless
-        self.depthCamera = depthCamera
+        self.depthCamera:DepthWebcam|RealSenseCamera = depthCamera
         self.rokuEcp = RokuECP(rokuUrl)
 
-        self.GestureRecognizerOptions = mp.tasks.vision.GestureRecognizerOptions(
+        if asyncUpdate:
+            self.update = self.updateAsync
+            mpRunningMode = MPRunningMode.LIVE_STREAM
+            mpCallback = self.mpGestureRecognizerCallback
+        else:
+            self.update = self.updateSync    
+            mpRunningMode = MPRunningMode.VIDEO
+            mpCallback = None
+
+        self.GestureRecognizerOptions = MPGestureRecognizerOptions(
             base_options=mp.tasks.BaseOptions(
                 model_asset_path="models/hagrid_120k/model/gesture_recognizer.task"
             ),
-            running_mode=mp.tasks.vision.RunningMode.VIDEO,
+            running_mode=mpRunningMode,
             num_hands=2,
             min_hand_detection_confidence=0.5,
             min_hand_presence_confidence=0.5,
@@ -88,12 +56,13 @@ class GestureRecognizer:
             #     category_denylist = []
             # ),
             # custom_gesture_classifier_options = MakeMPClassifierOptions(),
-            # Note: Needed for LIVE_STREAM running_mode
-            result_callback=None,
+            
+            # Note: Ignored for non LIVE_STREAM running modes
+            result_callback=mpCallback,
         )
 
         self.mpGestureRecognizer = (
-            mp.tasks.vision.GestureRecognizer.create_from_options(
+            MPGestureRecognizer.create_from_options(
                 self.GestureRecognizerOptions
             )
         )
@@ -106,8 +75,12 @@ class GestureRecognizer:
             )
             cv.namedWindow(self.windowName, cv.WINDOW_NORMAL | cv.WINDOW_KEEPRATIO)
 
-        self.frameId = 0
-        self.frameTime = time.time()
+        # TODO: Clean this up!
+        self.lock = threading.Lock()
+        self.processingFrames = {}
+
+        self.lastUpdateTime = time.time()
+        self.lastMpImageFrameTimeMs = 0
 
         self.renderImages: list[NamedImage] = []
 
@@ -120,116 +93,117 @@ class GestureRecognizer:
             self.headless
             or cv.getWindowProperty(self.windowName, cv.WND_PROP_VISIBLE) == 1
         )
-
-    def detectHands(self, framePixels, timestampMS):
-        # Note: Media pipe uses RGB for CNN models
-        # Note: we use non-writeable flag to pass by reference
-        framePixels.flags.writeable = False
-
-        # TODO: Do we need to convert cv2 BGR frame into RGB? does realsense give use an RGB frame... test this out
-        #       and check whether or not switching green and blue pixels improves hand gesture recognition
-        # cv.cvtColor(framePixels, cv.COLOR_BGR2RGB)
-
-        mpImage = mp.Image(image_format=mp.ImageFormat.SRGB, data=framePixels)
-        results = self.mpGestureRecognizer.recognize_for_video(
-            mpImage, int(timestampMS)
-        )
-
-        framePixels.flags.writeable = True
-
-        if not results:
-            return
-
-        # TODO: Pack this in a class
-        hand_annotations = list(
-            zip(results.hand_landmarks, results.handedness, results.gestures)
-        )
-
-        if not self.headless:
-            height, width, depth = framePixels.shape
-            for landmarks, handedness, gestures in hand_annotations:
-                # Draw box and gesture around image
-                landmarkCoords = np.array(
-                    [
-                        [int(landmark.x * width), int(landmark.y * height)]
-                        for landmark in landmarks
-                    ],
-                    dtype=int,
-                )
-
-                x, y, w, h = cv.boundingRect(landmarkCoords)
-                cv.rectangle(framePixels, (x, y), (x + w, y + h), color=Color.green)
-
-                gestureNames = ", ".join(
-                    [gesture.category_name for gesture in gestures]
-                )
-                cv.putText(
-                    framePixels,
-                    gestureNames,
-                    org=(x, y),
-                    fontScale=1,
-                    color=Color.green,
-                    fontFace=cv.FONT_HERSHEY_COMPLEX,
-                )
-
-                # Draw hand skeleton
-                mp_drawing.draw_landmarks(
-                    framePixels,
-                    MakeNormalizedLandmarkList(landmarks),
-                    mp_hands.HAND_CONNECTIONS,
-                    mp_drawing_styles.get_default_hand_landmarks_style(),
-                    mp_drawing_styles.get_default_hand_connections_style(),
-                )
-
-        return hand_annotations
-
-    def detectGestures(
-        self, handAnnotations, frameRate
-    ) -> StaticGesture | MotionGesture | None:
+    
+    def detectGestures(self, handAnnotations) -> list[Gesture]:
         gestures = []
-
         for gesture in Gestures:
-            if gesture.isDetected(self.frameId, handAnnotations, frameRate):
+            if gesture.isDetected(handAnnotations):
                 gestures.append(gesture)
 
-        return gestures
+        return gestures    
 
-    def update(self):
-        colorFrame, depthFrame = self.depthCamera.getFrames()
-
-        if colorFrame is None:
-            return
-
-        # clear out last frame
-        self.renderImages.clear()
-
-        frameTime = time.time()
-        frameRate = 1.0 / (frameTime - self.frameTime)
-
-        # TODO: Add depth filtering to processedPixels and see how it improves hand / gesture detection
-        processedPixels = colorFrame
-        handAnnotations = self.detectHands(processedPixels, 1000 * frameTime)
-
-        detectedGestures = self.detectGestures(handAnnotations, frameRate)
-
+    def processHandAnnotations(self, handAnnotations:HandAnnotations, frame:Frame, updateRate:float):
+        
+        detectedGestures = self.detectGestures(handAnnotations)
         for gesture in detectedGestures:
-            print(f"Detected: {gesture}")
             self.rokuEcp.sendCommand(gesture.rokuKey, gesture.rokuCommand)
 
         if self.headless:
-            print(f"FPS: {frameRate:.2f}", end="\r")
+            print(f"FPS: {updateRate:.2f} / {frame.frameRate:.2f}", end="\r")
 
         else:
+            processedPixels = frame.colorPixels
+            handAnnotations.draw(processedPixels)
+
             # TODO: append depth image if we use it
-            self.renderImages.append(
-                NamedImage(f"Processed: {frameRate:.2f} FPS", processedPixels)
+            self.renderImages = [
+                NamedImage(f"Processed: {updateRate:.2f} / {frame.frameRate:.2f} FPS", processedPixels)
+            ]
+
+    def mpGestureRecognizerCallback(self, mpResult:MPGestureRecognizerResult, mpImage:mp.Image, timestampMs:int):
+        updateTime = time.time()
+
+        self.lock.acquire()
+        frame = self.processingFrames.pop(timestampMs)
+        lastUpdateTime = self.lastUpdateTime
+        self.lock.release()
+
+        handAnnotations = HandAnnotations(frameId=frame.id, frameTime=frame.time)
+        handAnnotations.addMPGestureRecognizerResult(mpResult)
+        
+        updateRate = 1 / (updateTime - lastUpdateTime)
+        self.processHandAnnotations(handAnnotations, frame, updateRate)
+
+        self.lock.acquire()
+        if updateTime > self.lastUpdateTime:
+            self.lastUpdateTime = updateTime
+        self.lock.release()
+
+    def getNewMpImage(self, frame:Frame) -> MPImage:
+        
+        if frame.colorPixels is None:
+            return None
+
+        # Note: mediapipe will throw exception if we try to process a frame with the same int timestamp 
+        frameTimeMs = frame.timeMs()
+        if frameTimeMs <= self.lastMpImageFrameTimeMs:
+            return None
+        
+        # Note: Media pipe uses RGB for CNN models
+        # TODO: Do we need to convert cv2 BGR frame into RGB? does realsense give use an RGB frame... test this out
+        #       and check whether or not switching green and blue pixels improves hand gesture recognition
+        mpImage = MPImage(image_format=MPImageFormat.SRGB, data=frame.colorPixels)
+
+        self.lastMpImageFrameTimeMs = frameTimeMs
+        return mpImage
+
+    def updateAsync(self) -> None:
+        frame = self.depthCamera.getFrame()
+
+        mpImage = self.getNewMpImage(frame)
+        if mpImage is None:
+            return
+
+        frameTimeMs = frame.timeMs()
+
+        self.lock.acquire()
+
+        if len(self.processingFrames) < 5:        
+            self.processingFrames[frameTimeMs] = frame
+            self.mpGestureRecognizer.recognize_async(
+                mpImage, frameTimeMs
             )
+     
+            # print(len(self.processingFrames))
 
-        self.frameId += 1
-        self.frameTime = frameTime
+        self.lock.release()
 
-    def draw(self):
+    def updateSync(self) -> None:
+        frame = self.depthCamera.getFrame()     
+        
+        mpImage = self.getNewMpImage(frame)
+        if mpImage is None:
+            return
+       
+        updateTime = time.time()
+        frameTimeMs = frame.timeMs()
+
+        handAnnotations = HandAnnotations(frameId=frame.id, frameTime=frame.time)
+        mpResult = self.mpGestureRecognizer.recognize_for_video(
+            mpImage, frameTimeMs
+        )
+        handAnnotations.addMPGestureRecognizerResult(mpResult)
+
+        updateRate = 1 / (updateTime - self.lastUpdateTime)
+        self.processHandAnnotations(handAnnotations, frame, updateRate)
+
+        self.lastUpdateTime = updateTime
+        
+    def draw(self) -> None:
+        
+        # Note: We still call cv.waitKey if headless so camera has time to breath
         if self.headless:
+            cv.waitKey(1)
             return
 
         # Create a blank window image buffer
@@ -289,6 +263,9 @@ class GestureRecognizer:
 
 
 def main():
+
+    verboseLevel = getVerboseLevel()
+
     argParser = argparse.ArgumentParser(
         prog="gestureRecognition",
         description="Gesture classifier for Remote Free TV",
@@ -335,7 +312,20 @@ def main():
         help="Disables video output to reduce latency",
     )
 
+    argParser.add_argument(
+        "-v",
+        "--verbose",
+        action="store",
+        metavar="int:level",
+        default=verboseLevel.value,
+        required=False,
+        help=f"Sets to verbose logging level. LogLevels: {[str(x) for x in sorted(LogLevel.logLevelList())]}. Default: '{verboseLevel}'",
+    )
+
     args = argParser.parse_args()
+
+    verboseLevel = setVerboseLevel(LogLevel.fromValue(int(args.verbose)))
+    print(f"Set verbose level to: '{verboseLevel}'")
 
     if bool(args.list):
         listVideoPorts()
@@ -353,11 +343,18 @@ def main():
         camera = DepthWebcam(port=int(args.webcam))
 
     gestureRecognizer = GestureRecognizer(
-        depthCamera=camera, rokuUrl=args.url, headless=args.headless
+        depthCamera=camera, rokuUrl=args.url, headless=args.headless,
+
+        # TODO: Make sure gestures are thread safe and then try experimenting with this
+        # Also experiment with number of async frames (can pass them in as args like: '--async 3')
+        asyncUpdate=False
     )
 
     while gestureRecognizer:
         gestureRecognizer.update()
+
+        # TODO: place drawing on separate thread
+        #       so it doesn't bog down queuing up async frames 
         gestureRecognizer.draw()
 
 
