@@ -1,0 +1,16 @@
+RATING
+Mean:2.600000
+Standard Deviation:1.140175
+
+CORRECT
+Mean:0.584099
+Standard Deviation:0.144251
+
+MISSED
+Mean:0.363195
+Standard Deviation:0.135492
+
+INCORRECT
+Mean:0.052707
+Standard Deviation:0.057317
+
