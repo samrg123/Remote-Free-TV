@@ -1,16 +1,20 @@
 RATING
+Median:3.000000
 Mean:2.600000
 Standard Deviation:1.140175
 
 CORRECT
+Median:0.652174
 Mean:0.584099
 Standard Deviation:0.144251
 
 MISSED
+Median:0.347826
 Mean:0.363195
 Standard Deviation:0.135492
 
 INCORRECT
+Median:0.037037
 Mean:0.052707
 Standard Deviation:0.057317
 
