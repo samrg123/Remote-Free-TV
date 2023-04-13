@@ -73,7 +73,7 @@ class GestureRecognizer:
                 if windowName is not None
                 else f"GestureRecognizer: {type(depthCamera).__name__}"
             )
-            cv.namedWindow(self.windowName, cv.WINDOW_NORMAL | cv.WINDOW_KEEPRATIO)
+            cv.namedWindow(self.windowName, cv.WINDOW_NORMAL | cv.WINDOW_FREERATIO )
 
         # TODO: Clean this up!
         self.lock = threading.Lock()
@@ -207,7 +207,7 @@ class GestureRecognizer:
             return
 
         # Create a blank window image buffer
-        _, _, windowWidth, windowHeight = windowRect = cv.getWindowImageRect(
+        _, _, windowWidth, windowHeight = cv.getWindowImageRect(
             self.windowName
         )
         windowImage = np.zeros((windowHeight, windowWidth, 3), dtype=np.uint8)
