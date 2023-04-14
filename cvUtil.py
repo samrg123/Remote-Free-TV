@@ -1,59 +1,65 @@
+from dataclasses import dataclass
 import cv2 as cv
 
 # NOTE: Colors are in BGR to align with opencv
 class Color:
     
+    Type = tuple[int, int, int]
+
     white = (255, 255, 255)
     black = (  0,   0,   0)
     red   = (  0,   0, 255)
     green = (  0, 255,   0)
     blue  = (255,   0,   0)
 
+@dataclass
+class CvText:
+    text : str
+    origin : tuple[int, int]
+
+    font : int = cv.FONT_HERSHEY_DUPLEX
+    fontColor : Color.Type = Color.white
+    fontSize : float = .75
+    fontThickness : int = 1
+
+    shadowColor : Color.Type = Color.black
+    shadowSize : float = 2.0
+    origin : tuple[int, int] = (0, 0)
+
+    def getShadowThickness(self) -> int:
+        return int(self.fontThickness + self.shadowSize + 0.5)
+
+    def getSize(self) -> tuple[int, int]:
+        textWidth, textHeight  = cv.getTextSize(self.text, self.font, self.fontSize, self.getShadowThickness())[0]
+        return (textWidth, textHeight)
+    
+    def draw(self, pixels:cv.Mat) -> cv.Mat:
+
+        # Note: safe guard in case values get set to float which would cause openCV to throw an exception  
+        intOrigin = (int(self.origin[0]), int(self.origin[1]))
+        intFontThickness = int(self.fontThickness)
+
+
+        shadowImage = cv.putText(pixels, self.text, intOrigin, self.font, self.fontSize, self.shadowColor, self.getShadowThickness(), cv.LINE_AA)
+        return cv.putText(shadowImage, self.text, intOrigin, self.font, self.fontSize, self.fontColor, intFontThickness, cv.LINE_AA)    
+    
 class NamedImage:
+    defaultNamePadding:tuple[int,int] = [10, 10]
 
     def __init__(self, name:str, pixels:cv.Mat, nameOrigin:tuple[int, int] = None) -> None:
-        self.name = name
+
+        self.cvText = CvText(name)
         self.pixels = pixels
-
-        self.font = cv.FONT_HERSHEY_DUPLEX
-        self.fontColor = Color.white
-        self.fontSize = .75
-        self.fontThickness = 1
-
-        self.fontShadowColor = Color.black
-        self.fontShadowSize = 2
-
-        self.defaultFontPadding = [10, 10]
-
-        self.setNameOrigin(nameOrigin)
-
-    def getTextSize(self, text:str):
-        textWidth, textHeight  = cv.getTextSize(text, self.font, self.fontSize, self.getShadowThickness())[0]
-        return (textWidth, textHeight)
-
-    def setNameOrigin(self, nameOrigin:tuple[int, int]):
-
+        
         if nameOrigin is None:
-
-            _, nameHeight  = self.getTextSize(self.name)
-            self.nameOrigin = (self.defaultFontPadding[0], nameHeight + self.defaultFontPadding[1])
+            _, nameHeight  = self.cvText.getSize()
+            self.cvText.origin = (self.defaultNamePadding[0], nameHeight + self.defaultNamePadding[1])
         
         else:
-            self.nameOrigin = nameOrigin 
+            self.cvText.origin = nameOrigin
 
-    def getShadowThickness(self):
-        return self.fontThickness + self.fontShadowSize
-
-    def drawText(self, text:str, origin:tuple[int, int]):
-
-        # Note: opencv requires integer position for text
-        intOrigin = (int(origin[0]), int(origin[1]))
-
-        shadowImage = cv.putText(self.pixels, text, intOrigin, self.font, self.fontSize, self.fontShadowColor, self.getShadowThickness(), cv.LINE_AA)
-        return cv.putText(shadowImage, text, intOrigin, self.font, self.fontSize, self.fontColor, self.fontThickness, cv.LINE_AA)
-
-    def getImage(self):
-        return self.drawText(self.name, self.nameOrigin)
+    def getImage(self) -> cv.Mat:
+        return self.cvText.draw(self.pixels)
 
 def listVideoPorts(maxNonworkingPorts = 5):
     """

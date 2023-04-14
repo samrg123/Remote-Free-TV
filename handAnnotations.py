@@ -100,26 +100,12 @@ class HandAnnotations:
             # Draw bounding box
             boundingBox = feature.boundingBox()
             x1,y1,x2,y2 = (boundingBox * np.array([width, height, width, height])).astype(int)
-            cv.rectangle(pixels, (x1, y1), (x2, y2), color=Color.green)
+            cv.rectangle(pixels, (x1, y1), (x2, y2), color=Color.green, thickness=2)
 
             # Draw name of gesture above box
-            cv.putText(
-                pixels,
-                feature.gesturesStr(),
-                org=(x1, y1),
-                fontScale=1,
-                color=Color.green,
-                fontFace=cv.FONT_HERSHEY_COMPLEX,
-            )
+            CvText(feature.gesturesStr(), origin=(x1, y1), fontColor=Color.green).draw(pixels)
 
             # Draw handedness below box
-            cv.putText(
-                pixels,
-                feature.handednessStr(),
-                org=(x1, y2),
-                fontScale=1,
-                color=Color.green,
-                fontFace=cv.FONT_HERSHEY_COMPLEX,
-            )
+            CvText(feature.handednessStr(), origin=(x1, y2), fontColor=Color.green).draw(pixels)
 
 
