@@ -52,6 +52,7 @@ incorrect_stdev = statistics.stdev(incorrect_gestures)
 correct_stdev = statistics.stdev(correct_gestures)
 rating_stdev = statistics.stdev(rating)
 
+print("SAMPLE SIZE: %d\n" % (n))
 print("RATING\nMedian:%f\nMean:%f\nStandard Deviation:%f\n" % (rating_median, rating_mean, rating_stdev))
 print("CORRECT\nMedian:%f\nMean:%f\nStandard Deviation:%f\n" % (correct_median, correct_mean, correct_stdev))
 print("MISSED\nMedian:%f\nMean:%f\nStandard Deviation:%f\n" % (missed_median, missed_mean, missed_stdev))
