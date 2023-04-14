@@ -19,7 +19,8 @@ from gestures import *
 class GestureRecognizer:
     def __init__(
         self,
-        depthCamera,
+        depthCamera:DepthCamera,
+        modelPath:str,
         rokuUrl=RokuECP.defaultUrl,
         windowName: str = None,
         headless=False,
@@ -39,9 +40,10 @@ class GestureRecognizer:
             mpRunningMode = MPRunningMode.VIDEO
             mpCallback = None
 
+        log(f"Loading Model: '{modelPath}'")
         self.GestureRecognizerOptions = MPGestureRecognizerOptions(
             base_options=mp.tasks.BaseOptions(
-                model_asset_path="models/hagrid_120k/model/gesture_recognizer.task"
+                model_asset_path=modelPath
             ),
             running_mode=mpRunningMode,
             num_hands=2,
@@ -322,6 +324,17 @@ def main():
         help=f"Sets to verbose logging level. LogLevels: {[str(x) for x in sorted(LogLevel.logLevelList())]}. Default: '{verboseLevel}'",
     )
 
+    defaultModel = "models/hagrid_120k/model/gesture_recognizer.task"
+    argParser.add_argument(
+        "-m",
+        "--model",
+        action="store",
+        metavar="str:path",
+        default=defaultModel,
+        required=False,
+        help=f"Sets the GestureRecognizerModelPath. Default: '{defaultModel}'",
+    )
+
     args = argParser.parse_args()
 
     verboseLevel = setVerboseLevel(LogLevel.fromValue(int(args.verbose)))
@@ -340,10 +353,11 @@ def main():
     if args.realsense:
         camera = RealSenseCamera()
     else:
-        camera = DepthWebcam(port=int(args.webcam))
+        # TODO Pass width and height as args!
+        camera = DepthWebcam(port=int(args.webcam), width=1920, height=1080)
 
     gestureRecognizer = GestureRecognizer(
-        depthCamera=camera, rokuUrl=args.url, headless=args.headless,
+        depthCamera=camera, modelPath=args.model, rokuUrl=args.url, headless=args.headless,
 
         # TODO: Make sure gestures are thread safe and then try experimenting with this
         # Also experiment with number of async frames (can pass them in as args like: '--async 3')
