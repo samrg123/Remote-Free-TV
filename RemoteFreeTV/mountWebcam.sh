@@ -1,7 +1,7 @@
 #! /bin/bash
 
-# webcamBusId=1-12 #Integrated webcam
-webcamBusId=1-2 #Logitech C920
+webcamBusId=1-12 #Integrated webcam
+# webcamBusId=1-2 #Logitech C920
 # webcamBusId=7-3 #HD Lifecam
 
 helpCommand=--help
